@@ -27,7 +27,12 @@ RedistributeRBCs::RedistributeRBCs(MPI_Comm _cartcomm): nvertices(CudaRBC::get_n
 	CudaRBC::setup(nvertices, host_extent);
     }
     
+#ifdef AMPI
+    // AMPI's communicator duplication is broken, this is the workaround
+    cartcomm = _cartcomm;
+#else
     MPI_CHECK(MPI_Comm_dup(_cartcomm, &cartcomm));
+#endif
 	    
     MPI_CHECK( MPI_Comm_rank(cartcomm, &myrank));
 	    

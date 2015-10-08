@@ -25,7 +25,12 @@ SolventExchange::SolventExchange(MPI_Comm _cartcomm, const int basetag):  baseta
     assert(XSIZE_SUBDOMAIN % 2 == 0 && YSIZE_SUBDOMAIN % 2 == 0 && ZSIZE_SUBDOMAIN % 2 == 0);
     assert(XSIZE_SUBDOMAIN >= 2 && YSIZE_SUBDOMAIN >= 2 && ZSIZE_SUBDOMAIN >= 2);
 
+#ifdef AMPI
+    // AMPI's communicator duplication is broken, this is the workaround
+    cartcomm = _cartcomm;
+#else
     MPI_CHECK( MPI_Comm_dup(_cartcomm, &cartcomm));
+#endif
 
     MPI_CHECK( MPI_Comm_rank(cartcomm, &myrank));
     MPI_CHECK( MPI_Comm_size(cartcomm, &nranks));

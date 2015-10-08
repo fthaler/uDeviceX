@@ -28,7 +28,12 @@ iterationcount(-1), packstotalstart(27), host_packstotalstart(27), host_packstot
     assert(XSIZE_SUBDOMAIN % 2 == 0 && YSIZE_SUBDOMAIN % 2 == 0 && ZSIZE_SUBDOMAIN % 2 == 0);
     assert(XSIZE_SUBDOMAIN >= 4 && YSIZE_SUBDOMAIN >= 4 && ZSIZE_SUBDOMAIN >= 4);
 
+#ifdef AMPI
+    // AMPI's communicator duplication is broken, this is the workaround
+    cartcomm = _cartcomm;
+#else
     MPI_CHECK( MPI_Comm_dup(_cartcomm, &cartcomm));
+#endif
     MPI_CHECK( MPI_Comm_size(cartcomm, &nranks));
     MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
     MPI_CHECK( MPI_Comm_rank(cartcomm, &myrank));

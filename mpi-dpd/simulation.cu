@@ -504,8 +504,14 @@ void Simulation::_datadump_async()
 
     MPI_Comm myactivecomm, mycartcomm;
 
+#ifdef AMPI
+    // AMPI's communicator duplication is broken, this is the workaround
+    myactivecomm = activecomm;
+    mycartcomm = cartcomm;
+#else
     MPI_CHECK(MPI_Comm_dup(activecomm, &myactivecomm) );
     MPI_CHECK(MPI_Comm_dup(cartcomm, &mycartcomm) );
+#endif
 
     H5PartDump dump_part("allparticles->h5part", activecomm, cartcomm), *dump_part_solvent = NULL;
     H5FieldDump dump_field(cartcomm);

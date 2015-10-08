@@ -444,7 +444,12 @@ subindices_remote(1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSI
 {
     safety_factor = getenv("RDP_COMM_FACTOR") ? atof(getenv("RDP_COMM_FACTOR")) : 1.2;
 
+#ifdef AMPI
+    // AMPI's communicator duplication is broken, this is the workaround
+    cartcomm = _cartcomm;
+#else
     MPI_CHECK(MPI_Comm_dup(_cartcomm, &cartcomm) );
+#endif
 
     MPI_CHECK( MPI_Comm_rank(cartcomm, &myrank) );
     MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
