@@ -117,6 +117,7 @@ int main(int argc, char ** argv)
 
     int nranks, rank;
 
+#ifndef _NO_MPI_THREAD_
     if (mpi_thread_safe)
     {
 	//needed for the asynchronous data dumps
@@ -140,6 +141,7 @@ int main(int argc, char ** argv)
     }
     else
     {
+#endif
 	MPI_CHECK(MPI_Init(&argc, &argv));
 	MPI_CHECK( MPI_Comm_size(MPI_COMM_WORLD, &nranks) );
 	MPI_CHECK( MPI_Comm_rank(MPI_COMM_WORLD, &rank) );
@@ -148,7 +150,9 @@ int main(int argc, char ** argv)
 
 	if (rank == 0 && env_thread_safety)
 	    printf("I read MPICH_MAX_THREAD_SAFETY=%s", env_thread_safety);
+#ifndef _NO_MPI_THREAD_
     }
+#endif
 
     MPI_Comm activecomm = MPI_COMM_WORLD;
 #if defined(CUSTOM_REORDERING)
