@@ -33,6 +33,7 @@ using namespace std;
 
 void xyz_dump(MPI_Comm comm, MPI_Comm cartcomm, const char * filename, const char * particlename, Particle * particles, int n, bool append)
 {
+#ifndef _NO_MPIO_
     int rank;
     MPI_CHECK( MPI_Comm_rank(comm, &rank) );
 
@@ -86,8 +87,10 @@ void xyz_dump(MPI_Comm comm, MPI_Comm cartcomm, const char * filename, const cha
     MPI_CHECK( MPI_File_write_at_all(f, base + offset, const_cast<char *>(content.c_str()), len, MPI_CHAR, &status));
 
     MPI_CHECK( MPI_File_close(&f));
+#endif // _NO_MPIO_
 }
 
+#ifndef _NO_MPIO_
 void _write_bytes(const void * const ptr, const int nbytes32, MPI_File f, MPI_Comm comm)
 {
     MPI_Offset base;
@@ -105,11 +108,13 @@ void _write_bytes(const void * const ptr, const int nbytes32, MPI_File f, MPI_Co
 
     MPI_CHECK( MPI_File_seek(f, ntotal, MPI_SEEK_CUR));
 }
+#endif // _NO_MPIO_
 
 void ply_dump(MPI_Comm comm, MPI_Comm cartcomm, const char * filename,
 	      int (*mesh_indices)[3], const int ninstances, const int ntriangles_per_instance,
 	      Particle * _particles, int nvertices_per_instance, bool append)
 {
+#ifndef _NO_MPIO_
     std::vector<Particle> particles(_particles, _particles + ninstances * nvertices_per_instance);
 
     int rank;
@@ -179,6 +184,7 @@ void ply_dump(MPI_Comm comm, MPI_Comm cartcomm, const char * filename,
     _write_bytes(&buf.front(), sizeof(int) * buf.size(), f, comm);
 
     MPI_CHECK( MPI_File_close(&f));
+#endif // _NO_MPIO_
 }
 
 H5PartDump::H5PartDump(const string fname, MPI_Comm comm, MPI_Comm cartcomm): tstamp(0), disposed(false)
