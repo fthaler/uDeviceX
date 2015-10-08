@@ -144,6 +144,11 @@ struct Particle
 		MPI_CHECK( MPI_Type_contiguous(6, MPI_FLOAT, &mytype));
 
 		MPI_CHECK(MPI_Type_commit(&mytype));
+#ifdef AMPI
+		// workaround for bug in AMPI: VPs of a single process might
+		// access the new data type before it's registered there
+		MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));
+#endif
 
 		initialized = true;
 	    }
