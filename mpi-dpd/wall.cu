@@ -1006,7 +1006,7 @@ ComputeWall::ComputeWall(MPI_Comm cartcomm, Particle* const p, const int n, int&
             for(int i = 0; i < 26; ++i)
                 MPI_CHECK( MPI_Irecv(remsizes + i, 1, MPI_INTEGER, dstranks[i], 123 + recv_tags[i], cartcomm, reqrecv + i) );
 
-            const int localsize = local.size();
+            int localsize = local.size();
 
             MPI_Request reqsend[26];
             for(int i = 0; i < 26; ++i)
