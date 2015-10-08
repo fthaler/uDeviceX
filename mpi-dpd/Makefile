@@ -6,10 +6,20 @@ CODE_VAL ?= sm_35
 
 NVCCFLAGS += -I$(HDF5_DIR)/include -Xcudafe "--diag_suppress=unrecognized_gcc_pragma"
 NVCCFLAGS +=  -arch $(ARCH_VAL) -code $(CODE_VAL) -O3 -use_fast_math -g -DNDEBUG
+NVCCFLAGS += -I$(CHARMDIR)/include
 CXXFLAGS += -L../cuda-dpd/dpd -L../cuda-rbc/ -L../cuda-ctc/ -O3 -g  -std=c++11 -DNDEBUG
+CXXFLAGS += -I$(CHARMDIR)/include
 NVCCFLAGS += -I../cuda-dpd/dpd -I../cuda-rbc/ -I../cuda-ctc
 #NVCCFLAGS +=  -DREPORT_TOPOLOGY $(CRAY_PMI_INCLUDE_OPTS)
 #NVCCFLAGS += -DCUSTOM_REORDERING=1
+
+# AMPI-specific
+AMPICXX = $(CHARMDIR)/bin/ampicxx
+# currently no IO is supported
+mpio=0
+mpithread=0
+h5part=0
+h5=0
 
 OBJS = 	dpd.o wall.o fsi.o contact.o \
 	redistribute-particles.o redistribute-rbcs.o \
@@ -60,6 +70,14 @@ ifeq "$(datadump)" "2"
 NVCCFLAGS += -D_ASYNC_DUMPS_
 endif
 
+ifeq "$(mpio)" "0"
+NVCCFLAGS += -D_NO_MPIO_
+endif
+
+ifeq "$(mpithread)" "0"
+NVCCFLAGS += -D_NO_MPI_THREAD_
+endif
+
 NVCCFLAGS += -DVISCOSITY_S_LEVEL=$(slevel)
 
 inquire: $(bash [ `cat slevel.txt` == "$(slevel)" ] || { echo "cleanall" ; } )
@@ -68,7 +86,7 @@ inquire: $(bash [ `cat slevel.txt` == "$(slevel)" ] || { echo "cleanall" ; } )
 
 test:  $(OBJS) libcuda-dpd libcuda-rbc libcuda-ctc
 	echo h5part is "$(h5part)"
-	$(CXX) $(CXXFLAGS) $(OBJS) $(LIBS) -o test
+	$(AMPICXX) $(CXXFLAGS) $(OBJS) $(LIBS) -o test
 
 -include $(OBJS:.o=.d)
 
@@ -79,13 +97,13 @@ test:  $(OBJS) libcuda-dpd libcuda-rbc libcuda-ctc
 #	$(NVCC) $(NVCCFLAGS) -c $*.cu --ptx
 
 libcuda-dpd:
-	$(MAKE) -C ../cuda-dpd/dpd libcuda-dpd.a nonperiodic=1 floatized="$(floatized)" flops="$(flops)" CXX="$(CXX)" NVCC="$(NVCC)" ARCH_VAL="$(ARCH_VAL)" CODE_VAL="$(CODE_VAL)" slevel="$(slevel)"
+	$(MAKE) -C ../cuda-dpd/dpd libcuda-dpd.a nonperiodic=1 floatized="$(floatized)" flops="$(flops)" CXX="$(CXX)" NVCC="$(NVCC)" ARCH_VAL="$(ARCH_VAL)" CODE_VAL="$(CODE_VAL)" slevel="$(slevel)" NVCCFLAGS="$(NVCCFLAGS)"
 
 libcuda-rbc:
-	$(MAKE) -C ../cuda-rbc/ libcuda-rbc.a CXX="$(CXX)" NVCC="$(NVCC)" ARCH_VAL="$(ARCH_VAL)" CODE_VAL="$(CODE_VAL)"
+	$(MAKE) -C ../cuda-rbc/ libcuda-rbc.a CXX="$(CXX)" NVCC="$(NVCC)" ARCH_VAL="$(ARCH_VAL)" CODE_VAL="$(CODE_VAL)" NVCCFLAGS="$(NVCCFLAGS)"
 
 libcuda-ctc:
-	$(MAKE) -C ../cuda-ctc/ libcuda-ctc.a CXX="$(CXX)" NVCC="$(NVCC)" ARCH_VAL="$(ARCH_VAL)" CODE_VAL="$(CODE_VAL)"
+	$(MAKE) -C ../cuda-ctc/ libcuda-ctc.a CXX="$(CXX)" NVCC="$(NVCC)" ARCH_VAL="$(ARCH_VAL)" CODE_VAL="$(CODE_VAL)" NVCCFLAGS="$(NVCCFLAGS)"
 
 clean:
 	rm -f test *.o *.d slevel.txt
