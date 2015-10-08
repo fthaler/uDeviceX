@@ -20,6 +20,7 @@ mpio=0
 mpithread=0
 h5part=0
 h5=0
+datadump=0
 
 OBJS = 	dpd.o wall.o fsi.o contact.o \
 	redistribute-particles.o redistribute-rbcs.o \
