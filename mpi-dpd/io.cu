@@ -376,7 +376,7 @@ void H5FieldDump::_write_fields(const char * const path2h5,
 #endif // NO_H5
 }
 
-H5FieldDump::H5FieldDump(MPI_Comm cartcomm): cartcomm(cartcomm), last_idtimestep(0)
+H5FieldDump::H5FieldDump(MPI_Comm cartcomm): directory_exists(false), cartcomm(cartcomm), last_idtimestep(0)
 {
     int dims[3], periods[3], coords[3];
     MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
@@ -483,5 +483,3 @@ H5FieldDump::~H5FieldDump()
 
 #endif //NO_H5
 }
-
-bool H5FieldDump::directory_exists = false;

@@ -47,7 +47,7 @@ public:
 
 class H5FieldDump
 {
-    static bool directory_exists;
+    bool directory_exists;
     
     int last_idtimestep, globalsize[3];
 
