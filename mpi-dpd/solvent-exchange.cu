@@ -18,7 +18,7 @@
 
 using namespace std;
 
-SolventExchange::SolventExchange(MPI_Comm _cartcomm, const int basetag):  basetag(basetag), firstpost(true), nactive(26)
+SolventExchange::SolventExchange(Globals* globals, MPI_Comm _cartcomm, const int basetag):  globals(globals), basetag(basetag), firstpost(true), nactive(26)
 {
     safety_factor = getenv("HEX_COMM_FACTOR") ? atof(getenv("HEX_COMM_FACTOR")) : 1.2;
 
@@ -584,7 +584,7 @@ void SolventExchange::post(const Particle * const p, const int n, cudaStream_t s
 
 	    const int count = sendhalos[i].hbuf.size;
 
-	    MPI_CHECK( MPI_Isend(sendhalos[i].hbuf.data, expected, Particle::datatype(), dstranks[i],
+	    MPI_CHECK( MPI_Isend(sendhalos[i].hbuf.data, expected, globals->particle_datatype, dstranks[i],
 				 basetag +  i, cartcomm, sendreq + nsendreq) );
 
 	    ++nsendreq;
@@ -598,7 +598,7 @@ void SolventExchange::post(const Particle * const p, const int n, cudaStream_t s
 		printf("extra message from rank %d to rank %d in the direction of %d %d %d! difference %d, expected is %d\n",
 		       myrank, dstranks[i], d[0], d[1], d[2], difference, expected);
 
-		MPI_CHECK( MPI_Isend(sendhalos[i].hbuf.data + expected, difference, Particle::datatype(), dstranks[i],
+		MPI_CHECK( MPI_Isend(sendhalos[i].hbuf.data + expected, difference, globals->particle_datatype, dstranks[i],
 				     basetag + i + 555, cartcomm, sendreq + nsendreq) );
 
 		++nsendreq;
@@ -618,7 +618,7 @@ void SolventExchange::post_expected_recv()
 	assert(recvhalos[i].hbuf.capacity >= recvhalos[i].expected);
 
 	if (recvhalos[i].expected)
-	    MPI_CHECK( MPI_Irecv(recvhalos[i].hbuf.data, recvhalos[i].expected, Particle::datatype(), dstranks[i],
+	    MPI_CHECK( MPI_Irecv(recvhalos[i].hbuf.data, recvhalos[i].expected, globals->particle_datatype, dstranks[i],
 				 basetag + recv_tags[i], cartcomm, recvreq + c++ ));
     }
 
@@ -670,7 +670,7 @@ void SolventExchange::recv(cudaStream_t stream, cudaStream_t uploadstream)
 
 	    MPI_Status status;
 
-	    MPI_Recv(recvhalos[i].hbuf.data + expected, difference, Particle::datatype(), dstranks[i],
+	    MPI_Recv(recvhalos[i].hbuf.data + expected, difference, globals->particle_datatype, dstranks[i],
 		     basetag + recv_tags[i] + 555, cartcomm, &status);
 	}
     }

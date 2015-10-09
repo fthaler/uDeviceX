@@ -33,7 +33,7 @@ class ComputeDPD : public SolventExchange
     
 public:
     
-    ComputeDPD(MPI_Comm cartcomm);
+    ComputeDPD(Globals* globals, MPI_Comm cartcomm);
 
     void remote_interactions(const Particle * const p, const int n, Acceleration * const a, cudaStream_t stream, cudaStream_t uploadstream);
 

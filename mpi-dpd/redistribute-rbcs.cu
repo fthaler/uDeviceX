@@ -16,7 +16,7 @@
 #include "redistribute-rbcs.h"
 #include "minmax.h"
 
-RedistributeRBCs::RedistributeRBCs(MPI_Comm _cartcomm): nvertices(CudaRBC::get_nvertices())
+RedistributeRBCs::RedistributeRBCs(Globals* globals, MPI_Comm _cartcomm): globals(globals), nvertices(CudaRBC::get_nvertices())
 {
     assert(XSIZE_SUBDOMAIN % 2 == 0 && YSIZE_SUBDOMAIN % 2 == 0 && ZSIZE_SUBDOMAIN % 2 == 0);
     assert(XSIZE_SUBDOMAIN >= 2 && YSIZE_SUBDOMAIN >= 2 && ZSIZE_SUBDOMAIN >= 2);
@@ -281,7 +281,7 @@ int RedistributeRBCs::post()
 	{
 	    MPI_Request request;
 
-	    MPI_CHECK(MPI_Irecv(halo_recvbufs[i].data, halo_recvbufs[i].size, Particle::datatype(),
+	    MPI_CHECK(MPI_Irecv(halo_recvbufs[i].data, halo_recvbufs[i].size, globals->particle_datatype,
 				anti_rankneighbors[i], i + 1155, cartcomm, &request));
 
 	    recvreq.push_back(request);
@@ -292,7 +292,7 @@ int RedistributeRBCs::post()
 	{
 	    MPI_Request request;
 
-	    MPI_CHECK(MPI_Isend(halo_sendbufs[i].data, halo_sendbufs[i].size, Particle::datatype(),
+	    MPI_CHECK(MPI_Isend(halo_sendbufs[i].data, halo_sendbufs[i].size, globals->particle_datatype,
 				rankneighbors[i], i + 1155, cartcomm, &request));
 
 	    sendreq.push_back(request);

@@ -15,9 +15,13 @@
 #include <mpi.h>
 
 #include "common.h"
+#include "globals.h"
 
 class SolventExchange
 {
+    // global variable pointer for AMPI
+    Globals* globals;
+
     MPI_Comm cartcomm;
     MPI_Request sendreq[26 * 2], recvreq[26], sendcellsreq[26], recvcellsreq[26], sendcountreq[26], recvcountreq[26];
     
@@ -105,7 +109,7 @@ protected:
 
 public:
     
-    SolventExchange(MPI_Comm cartcomm, const int basetag);
+    SolventExchange(Globals* globals, MPI_Comm cartcomm, const int basetag);
 
     void pack(const Particle * const p, const int n, const int * const cellsstart, const int * const cellscount, cudaStream_t stream);
 

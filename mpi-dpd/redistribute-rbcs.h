@@ -17,10 +17,13 @@
 #include <rbc-cuda.h>
 
 #include "common.h"
+#include "globals.h"
 
 class RedistributeRBCs
 {
 protected:
+    // global variable pointer for AMPI
+    Globals* globals;
 
     MPI_Comm cartcomm;
     MPI_Request sendcountreq[26];
@@ -45,7 +48,7 @@ protected:
     
 public:
     
-    RedistributeRBCs(MPI_Comm comm);
+    RedistributeRBCs(Globals* globals, MPI_Comm comm);
         
     void extent(const Particle * const xyzuvw, const int nrbcs, cudaStream_t stream);
     void pack_sendcount(const Particle * const xyzuvw, const int nrbcs, cudaStream_t stream);

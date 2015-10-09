@@ -134,6 +134,7 @@ struct Particle
 {
     float x[3], u[3];
 
+/* moved static variables to globals.h for use with AMPI
     static bool initialized;
     static MPI_Datatype mytype;
 
@@ -144,23 +145,20 @@ struct Particle
 		MPI_CHECK( MPI_Type_contiguous(6, MPI_FLOAT, &mytype));
 
 		MPI_CHECK(MPI_Type_commit(&mytype));
-#ifdef AMPI
-		// workaround for bug in AMPI: VPs of a single process might
-		// access the new data type before it's registered there
-		MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));
-#endif
 
 		initialized = true;
 	    }
 
 	    return mytype;
 	}
+*/
 };
 
 struct Acceleration
 {
     float a[3];
 
+/* moved static variables to globals.h for use with AMPI
     static bool initialized;
     static MPI_Datatype mytype;
 
@@ -177,6 +175,7 @@ struct Acceleration
 
 	    return mytype;
 	}
+*/
 };
 
 struct ParticlesWrap

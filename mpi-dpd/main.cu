@@ -235,7 +235,8 @@ int main(int argc, char ** argv)
 
 	MPI_CHECK(MPI_Barrier(activecomm));
 	
-	Simulation simulation(cartcomm, activecomm, SignalHandling::check_termination_request);
+    Globals* globals = new Globals;
+	Simulation simulation(globals, cartcomm, activecomm, SignalHandling::check_termination_request);
 
 	simulation.run();
     }

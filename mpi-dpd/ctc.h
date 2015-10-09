@@ -33,7 +33,7 @@ class RedistributeCTCs : public RedistributeRBCs
 
 public:
 
-RedistributeCTCs(MPI_Comm _cartcomm):RedistributeRBCs(_cartcomm)
+RedistributeCTCs(Globals* globals, MPI_Comm _cartcomm):RedistributeRBCs(globals, _cartcomm)
     {
 	if (ctcs)
 	{

@@ -24,6 +24,7 @@
 #endif
 
 #include "common.h"
+#include "globals.h"
 #include "containers.h"
 #include "dpd.h"
 #include "wall.h"
@@ -37,6 +38,9 @@
 
 class Simulation
 {
+    // global variable pointer for AMPI
+    Globals* globals;
+
     ParticleArray particles_pingpong[2];
     ParticleArray * particles, * newparticles;
     SimpleDeviceBuffer<float4> xyzouvwo;
@@ -100,7 +104,7 @@ class Simulation
 
 public:
 
-    Simulation(MPI_Comm cartcomm, MPI_Comm activecomm, bool (*check_termination)()) ;
+    Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm, bool (*check_termination)()) ;
     
     void run();
 
