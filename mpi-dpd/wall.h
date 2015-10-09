@@ -16,6 +16,7 @@
 
 #include <../dpd-rng.h>
 #include "common.h"
+#include "globals.h"
 
 namespace SolidWallsKernel
 {
@@ -24,6 +25,9 @@ namespace SolidWallsKernel
 
 class ComputeWall
 {
+    // global variable pointer for AMPI
+    Globals* globals;
+
     MPI_Comm cartcomm;
     int myrank, dims[3], periods[3], coords[3];
 
@@ -38,7 +42,7 @@ class ComputeWall
 
 public:
 
-    ComputeWall(MPI_Comm cartcomm, Particle* const p, const int n, int& nsurvived, ExpectedMessageSizes& new_sizes, const bool verbose);
+    ComputeWall(Globals* globals, MPI_Comm cartcomm, Particle* const p, const int n, int& nsurvived, ExpectedMessageSizes& new_sizes, const bool verbose);
 
     ~ComputeWall();
 

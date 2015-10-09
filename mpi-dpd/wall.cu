@@ -755,10 +755,11 @@ struct FieldSampler
     }
 };
 
-ComputeWall::ComputeWall(MPI_Comm cartcomm, Particle* const p, const int n, int& nsurvived,
+ComputeWall::ComputeWall(Globals* globals, MPI_Comm cartcomm, Particle* const p, const int n, int& nsurvived,
         ExpectedMessageSizes& new_sizes, const bool verbose):
+            globals(globals),
             cartcomm(cartcomm), arrSDF(NULL), solid4(NULL), solid_size(0),
-            cells(XSIZE_SUBDOMAIN + 2 * XMARGIN_WALL, YSIZE_SUBDOMAIN + 2 * YMARGIN_WALL, ZSIZE_SUBDOMAIN + 2 * ZMARGIN_WALL)
+            cells(globals, XSIZE_SUBDOMAIN + 2 * XMARGIN_WALL, YSIZE_SUBDOMAIN + 2 * YMARGIN_WALL, ZSIZE_SUBDOMAIN + 2 * ZMARGIN_WALL)
 {
     MPI_CHECK( MPI_Comm_rank(cartcomm, &myrank));
 
@@ -893,7 +894,7 @@ ComputeWall::ComputeWall(MPI_Comm cartcomm, Particle* const p, const int n, int&
                 }
     }
 
-    if (hdf5field_dumps)
+    if (globals->hdf5field_dumps)
     {
         NVTX_RANGE("WALL/h5-dump", NVTX_C4);
 
@@ -954,7 +955,7 @@ ComputeWall::ComputeWall(MPI_Comm cartcomm, Particle* const p, const int n, int&
 
     thrust::device_vector<Particle> solid_local(thrust::device_ptr<Particle>(p + nsurvived), thrust::device_ptr<Particle>(p + nsurvived + nbelt));
 
-    if (hdf5part_dumps)
+    if (globals->hdf5part_dumps)
     {
         const int n = solid_local.size();
 

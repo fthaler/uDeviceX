@@ -24,7 +24,6 @@ int (*CollectionRBC::indices)[3] = NULL, CollectionRBC::ntriangles = -1, Collect
 
 int (*CollectionCTC::indices)[3] = NULL, CollectionCTC::ntriangles = -1, CollectionCTC::nvertices = -1;
 */
-Globals* CollectionRBC::globals = NULL;
 
 namespace ParticleKernels
 {
@@ -234,14 +233,14 @@ void ParticleArray::update_stage1(const float driving_acceleration, cudaStream_t
 {
     if (size)
 	ParticleKernels::update_stage1<<<(xyzuvw.size + 127) / 128, 128, 0, stream>>>(
-	    xyzuvw.data, axayaz.data, xyzuvw.size, dt, driving_acceleration, globalextent.y * 0.5 - origin.y, doublepoiseuille, false);
+	    xyzuvw.data, axayaz.data, xyzuvw.size, dt, driving_acceleration, globalextent.y * 0.5 - origin.y, globals->doublepoiseuille, false);
 }
 
 void  ParticleArray::update_stage2_and_1(const float driving_acceleration, cudaStream_t stream)
 {
     if (size)
 	ParticleKernels::update_stage2_and_1<<<(xyzuvw.size + 127) / 128, 128, 0, stream>>>
-	    ((float2 *)xyzuvw.data, (float *)axayaz.data, xyzuvw.size, dt, driving_acceleration, globalextent.y * 0.5 - origin.y, doublepoiseuille);
+	    ((float2 *)xyzuvw.data, (float *)axayaz.data, xyzuvw.size, dt, driving_acceleration, globalextent.y * 0.5 - origin.y, globals->doublepoiseuille);
 }
 
 void ParticleArray::resize(int n)
@@ -299,13 +298,9 @@ struct TransformedExtent
     float transform[4][4];
 };
 
-CollectionRBC::CollectionRBC(Globals* _globals, MPI_Comm cartcomm):
-cartcomm(cartcomm), ncells(0)
+CollectionRBC::CollectionRBC(Globals* globals, MPI_Comm cartcomm):
+ParticleArray(globals), cartcomm(cartcomm), ncells(0)
 {
-    assert(globals == NULL || globals == _globals);
-    if (globals == NULL)
-        globals = _globals;
-
     MPI_CHECK(MPI_Comm_rank(cartcomm, &myrank));
     MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
 
@@ -428,7 +423,7 @@ void CollectionRBC::remove(const int * const entries, const int nentries)
     CUDA_CHECK(cudaMemcpy(xyzuvw.data, survived.data, sizeof(Particle) * survived.size, cudaMemcpyDeviceToDevice));
 }
 
-void CollectionRBC::_dump(const char * const path2xyz, const char * const format4ply,
+void CollectionRBC::_dump(Globals* globals, const char * const path2xyz, const char * const format4ply,
 			  MPI_Comm comm, MPI_Comm cartcomm, const int ntriangles, const int ncells, const int nvertices, int (* const indices)[3],
 			  Particle * const p, const Acceleration * const a, const int n, const int iddatadump)
 {
@@ -447,7 +442,7 @@ void CollectionRBC::_dump(const char * const path2xyz, const char * const format
 	    p[i].u[c] -= 0.5 * dt * a[i].a[c];
 	}
 
-    if (xyz_dumps)
+    if (globals->xyz_dumps)
 	xyz_dump(comm, cartcomm, path2xyz, "cell-particles", p, n, !firsttime);
 
     char buf[200];

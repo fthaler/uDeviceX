@@ -156,7 +156,7 @@ void Simulation::_redistribute()
 
     CUDA_CHECK(cudaPeekAtLastError());
 
-    //localcomm.barrier();
+    //globals->localcomm.barrier();
 
     timings["redistribute"] += MPI_Wtime() - tstart;
 }
@@ -172,7 +172,7 @@ void Simulation::_report(const bool verbose, const int idtimestep)
 
 	float host_busy_time = (MPI_Wtime() - t0) - host_idle_time;
 
-	host_busy_time *= 1e3 / steps_per_report;
+	host_busy_time *= 1e3 / globals->steps_per_report;
 
 	float sumval, maxval, minval;
 	MPI_CHECK(MPI_Reduce(&host_busy_time, &sumval, 1, MPI_FLOAT, MPI_SUM, 0, activecomm));
@@ -188,7 +188,7 @@ void Simulation::_report(const bool verbose, const int idtimestep)
 	    printf("\x1b[93moverall imbalance: %.f%%, host workload min/avg/max: %.2f/%.2f/%.2f ms\x1b[0m\n",
 		   imbalance , minval, sumval / commsize, maxval);
 
-	localcomm.print_particles(particles->size);
+	globals->localcomm.print_particles(particles->size);
 
 	host_idle_time = 0;
 	t0 = t1;
@@ -201,16 +201,16 @@ void Simulation::_report(const bool verbose, const int idtimestep)
 
 	if (verbose)
 	{
-	    printf("\x1b[92mbeginning of time step %d (%.3f ms)\x1b[0m\n", idtimestep, (t1 - t0) * 1e3 / steps_per_report);
+	    printf("\x1b[92mbeginning of time step %d (%.3f ms)\x1b[0m\n", idtimestep, (t1 - t0) * 1e3 / globals->steps_per_report);
 	    printf("in more details, per time step:\n");
 	    double tt = 0;
 	    for(std::map<string, double>::iterator it = timings.begin(); it != timings.end(); ++it)
 	    {
-		printf("%s: %.3f ms\n", it->first.c_str(), it->second * 1e3 / steps_per_report);
+		printf("%s: %.3f ms\n", it->first.c_str(), it->second * 1e3 / globals->steps_per_report);
 		tt += it->second;
 		it->second = 0;
 	    }
-	    printf("discrepancy: %.3f ms\n", ((t1 - t0) - tt) * 1e3 / steps_per_report);
+	    printf("discrepancy: %.3f ms\n", ((t1 - t0) - tt) * 1e3 / globals->steps_per_report);
 	}
 
 	t0 = t1;
@@ -257,11 +257,11 @@ void Simulation::_create_walls(const bool verbose, bool & termination_request)
 
     int nsurvived = 0;
     ExpectedMessageSizes new_sizes;
-    wall = new ComputeWall(cartcomm, particles->xyzuvw.data, particles->size, nsurvived, new_sizes, verbose);
+    wall = new ComputeWall(globals, cartcomm, particles->xyzuvw.data, particles->size, nsurvived, new_sizes, verbose);
 
     //adjust the message sizes if we're pushing the flow in x
     {
-	const double xvelavg = getenv("XVELAVG") ? atof(getenv("XVELAVG")) : pushtheflow;
+	const double xvelavg = getenv("XVELAVG") ? atof(getenv("XVELAVG")) : globals->pushtheflow;
 	const double yvelavg = getenv("YVELAVG") ? atof(getenv("YVELAVG")) : 0;
 	const double zvelavg = getenv("ZVELAVG") ? atof(getenv("ZVELAVG")) : 0;
 
@@ -294,7 +294,7 @@ void Simulation::_create_walls(const bool verbose, bool & termination_request)
 
     //there is no support for killing zero-workload ranks for rbcs and ctcs just yet
     /* this is unnecessarily complex for now
-       if (!rbcs && !ctcs)
+       if (!globals->rbcs && !globals->ctcs)
        {
        const bool local_work = new_sizes.msgsizes[1 + 3 + 9] > 0;
 
@@ -374,7 +374,7 @@ void Simulation::_forces()
 
     CUDA_CHECK(cudaPeekAtLastError());
 
-    if (contactforces)
+    if (globals->contactforces)
 	contact.build_cells(wsolutes, mainstream);
 
     dpd.local_interactions(particles->xyzuvw.data, xyzouvwo.data, xyzo_half.data, particles->size, particles->axayaz.data,
@@ -408,7 +408,7 @@ void Simulation::_forces()
 
     fsi.bulk(wsolutes, mainstream);
 
-    if (contactforces)
+    if (globals->contactforces)
 	contact.bulk(wsolutes, mainstream);
 
     CUDA_CHECK(cudaPeekAtLastError());
@@ -548,11 +548,11 @@ void Simulation::_datadump_async()
 	    diagnostics(myactivecomm, mycartcomm, p, n, dt, datadump_idtimestep, a);
 	}
 
-	if (xyz_dumps)
+	if (globals->xyz_dumps)
 	{
 	    NVTX_RANGE("xyz dump", NVTX_C2);
 
-	    if (walls && datadump_idtimestep >= wall_creation_stepid && !wallcreated)
+	    if (globals->walls && datadump_idtimestep >= globals->wall_creation_stepid && !wallcreated)
 	    {
 		if (rank == 0)
 		{
@@ -574,11 +574,11 @@ void Simulation::_datadump_async()
 	    xyz_dump(myactivecomm, mycartcomm, "xyz/particles->xyz", "all-particles", p, n, datadump_idtimestep > 0);
 	}
 
-	if (hdf5part_dumps)
+	if (globals->hdf5part_dumps)
 	{
 	    NVTX_RANGE("h5part dump", NVTX_C3);
 
-	    if (!dump_part_solvent && walls && datadump_idtimestep >= wall_creation_stepid)
+	    if (!dump_part_solvent && globals->walls && datadump_idtimestep >= globals->wall_creation_stepid)
 	    {
 		dump_part.close();
 
@@ -591,7 +591,7 @@ void Simulation::_datadump_async()
 		dump_part.dump(p, n);
 	}
 
-	if (hdf5field_dumps)
+	if (globals->hdf5field_dumps)
 	{
 	    NVTX_RANGE("hdf5 field dump", NVTX_C4);
 
@@ -602,10 +602,10 @@ void Simulation::_datadump_async()
 	    NVTX_RANGE("ply dump", NVTX_C5);
 
 	    if (rbcscoll)
-		CollectionRBC::dump(myactivecomm, mycartcomm, p + datadump_nsolvent, a + datadump_nsolvent, datadump_nrbcs, iddatadump);
+		CollectionRBC::dump(globals, myactivecomm, mycartcomm, p + datadump_nsolvent, a + datadump_nsolvent, datadump_nrbcs, iddatadump);
 
 	    if (ctcscoll)
-		CollectionCTC::dump(myactivecomm, mycartcomm, p + datadump_nsolvent + datadump_nrbcs,
+		CollectionCTC::dump(globals, myactivecomm, mycartcomm, p + datadump_nsolvent + datadump_nrbcs,
 				    a + datadump_nsolvent + datadump_nrbcs, datadump_nctcs, iddatadump);
 	}
 
@@ -669,23 +669,26 @@ void Simulation::_update_and_bounce()
 }
 
 Simulation::Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm, bool (*check_termination)()) :
-    globals(globals), cartcomm(cartcomm), activecomm(activecomm),
-    /*particles(_ic()),*/ cells(XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN),
+    GlobalsInjector(globals), cartcomm(cartcomm), activecomm(activecomm),
+    /*particles(_ic()),*/ cells(globals, XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN),
     rbcscoll(NULL), ctcscoll(NULL), wall(NULL),
     redistribute(cartcomm),  redistribute_rbcs(globals, cartcomm),  redistribute_ctcs(globals, cartcomm),
     dpd(globals, cartcomm), fsi(cartcomm), contact(cartcomm), solutex(cartcomm),
     check_termination(check_termination),
-    driving_acceleration(0), host_idle_time(0), nsteps((int)(tend / dt)),
+    driving_acceleration(0), host_idle_time(0), nsteps((int)(globals->tend / dt)),
     datadump_pending(false), simulation_is_done(false)
 {
+    particles_pingpong[0].globals = globals;
+    particles_pingpong[1].globals = globals;
+
     MPI_CHECK( MPI_Comm_size(activecomm, &nranks) );
     MPI_CHECK( MPI_Comm_rank(activecomm, &rank) );
 
     solutex.attach_halocomputation(fsi);
 
-    if (contactforces)
+    if (globals->contactforces)
 	solutex.attach_halocomputation(contact);
-    //localcomm.initialize(activecomm);
+    //globals->localcomm.initialize(activecomm);
 
     int dims[3], periods[3], coords[3];
     MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
@@ -720,13 +723,13 @@ Simulation::Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm,
     CUDA_CHECK(cudaStreamCreate(&uploadstream));
     CUDA_CHECK(cudaStreamCreate(&downloadstream));
 
-    if (rbcs)
+    if (globals->rbcs)
     {
 	rbcscoll = new CollectionRBC(globals, cartcomm);
 	rbcscoll->setup("rbcs-ic.txt");
     }
 
-    if (ctcs)
+    if (globals->ctcs)
     {
 	ctcscoll = new CollectionCTC(globals, cartcomm);
 	ctcscoll->setup("ctcs-ic.txt");
@@ -798,7 +801,7 @@ void Simulation::_lockstep()
     dpd.local_interactions(particles->xyzuvw.data, xyzouvwo.data, xyzo_half.data, particles->size, particles->axayaz.data,
 			   cells.start, cells.count, mainstream);
 
-    if (contactforces)
+    if (globals->contactforces)
 	contact.build_cells(wsolutes, mainstream);
 
     solutex.post_p(mainstream, downloadstream);
@@ -823,7 +826,7 @@ void Simulation::_lockstep()
 
     fsi.bulk(wsolutes, mainstream);
 
-    if (contactforces)
+    if (globals->contactforces)
 	contact.bulk(wsolutes, mainstream);
 
     CUDA_CHECK(cudaPeekAtLastError());
@@ -931,7 +934,7 @@ void Simulation::_lockstep()
 
 void Simulation::run()
 {
-    if (rank == 0 && !walls)
+    if (rank == 0 && !globals->walls)
 	printf("the simulation begins now and it consists of %.3e steps\n", (double)nsteps);
 
     double time_simulation_start = MPI_Wtime();
@@ -939,7 +942,7 @@ void Simulation::run()
     _redistribute();
     _forces();
 
-    if (!walls && pushtheflow)
+    if (!globals->walls && globals->pushtheflow)
 	driving_acceleration = hydrostatic_a;
 
     particles->update_stage1(driving_acceleration, mainstream);
@@ -958,12 +961,12 @@ void Simulation::run()
 	const bool verbose = it > 0 && rank == 0;
 
 #ifdef _USE_NVTX_
-	if (it == nvtxstart)
+	if (it == globals->nvtxstart)
 	{
 	    NvtxTracer::currently_profiling = true;
 	    CUDA_CHECK(cudaProfilerStart());
 	}
-	else if (it == nvtxstop)
+	else if (it == globals->nvtxstop)
 	{
 	    CUDA_CHECK(cudaProfilerStop());
 	    NvtxTracer::currently_profiling = false;
@@ -976,7 +979,7 @@ void Simulation::run()
 	}
 #endif
 
-	if (it % steps_per_report == 0)
+	if (it % globals->steps_per_report == 0)
 	{
 	    CUDA_CHECK(cudaStreamSynchronize(mainstream));
 
@@ -992,11 +995,11 @@ void Simulation::run()
     lockstep_check:
 
 	const bool lockstep_OK =
-	    !(walls && it >= wall_creation_stepid && wall == NULL) &&
-	    !(it % steps_per_dump == 0) &&
-	    !(it + 1 == nvtxstart) &&
-	    !(it + 1 == nvtxstop) &&
-	    !((it + 1) % steps_per_report == 0) &&
+	    !(globals->walls && it >= globals->wall_creation_stepid && wall == NULL) &&
+	    !(it % globals->steps_per_dump == 0) &&
+	    !(it + 1 == globals->nvtxstart) &&
+	    !(it + 1 == globals->nvtxstop) &&
+	    !((it + 1) % globals->steps_per_report == 0) &&
 	    !(it + 1 == nsteps);
 
 	if (lockstep_OK)
@@ -1009,7 +1012,7 @@ void Simulation::run()
 	}
 #endif
 
-	if (walls && it >= wall_creation_stepid && wall == NULL)
+	if (globals->walls && it >= globals->wall_creation_stepid && wall == NULL)
 	{
 	    CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -1024,7 +1027,7 @@ void Simulation::run()
 
 	    time_simulation_start = MPI_Wtime();
 
-	    if (pushtheflow)
+	    if (globals->pushtheflow)
 		driving_acceleration = hydrostatic_a;
 
 	    if (rank == 0)
@@ -1034,7 +1037,7 @@ void Simulation::run()
 	_forces();
 
 #ifndef _NO_DUMPS_
-	if (it % steps_per_dump == 0)
+	if (it % globals->steps_per_dump == 0)
 	    _datadump(it);
 #endif
 	_update_and_bounce();
@@ -1050,7 +1053,7 @@ void Simulation::run()
 	    printf("simulation is done after %.2lf s (%dm%ds). Ciao.\n",
 		   telapsed, (int)(telapsed / 60), (int)(telapsed) % 60);
 	else
-	    if (it != wall_creation_stepid)
+	    if (it != globals->wall_creation_stepid)
 		printf("external termination request (signal) after %.3e s. Bye.\n", telapsed);
 
     fflush(stdout);

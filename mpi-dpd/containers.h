@@ -18,7 +18,7 @@
 #include "common.h"
 #include "globals.h"
 
-struct ParticleArray
+struct ParticleArray : public GlobalsInjector
 {
     int size;
 
@@ -26,6 +26,8 @@ struct ParticleArray
 
     SimpleDeviceBuffer<Particle> xyzuvw;
     SimpleDeviceBuffer<Acceleration> axayaz;
+
+    ParticleArray(Globals* globals = NULL) : GlobalsInjector(globals) {}
 
     void resize(int n);
     void preserve_resize(int n);
@@ -48,7 +50,6 @@ class CollectionRBC : public ParticleArray
 */
 
 protected:
-    static Globals* globals;
     MPI_Comm cartcomm;
 
     int ncells, myrank, dims[3], periods[3], coords[3];
@@ -57,7 +58,7 @@ protected:
 
     virtual void _initialize(float *device_xyzuvw, const float (*transform)[4]);
 
-    static void _dump(const char * const path2xyz, const char * const format4ply,
+    static void _dump(Globals* globals, const char * const path2xyz, const char * const format4ply,
 		      MPI_Comm comm, MPI_Comm cartcomm, const int ntriangles, const int ncells, const int nvertices,
 		      int (* const indices)[3],
 		      Particle * const p, const Acceleration * const a, const int n, const int iddatadump);
@@ -80,12 +81,12 @@ public:
     int count() { return ncells; }
     int pcount() { return ncells * get_nvertices(); }
 
-    static void dump(MPI_Comm comm, MPI_Comm cartcomm,
+    static void dump(Globals* globals, MPI_Comm comm, MPI_Comm cartcomm,
 		     Particle * const p, const Acceleration * const a, const int n, const int iddatadump)
     {
         int nvertices = globals->collectionrbc_nvertices;
         int ntriangles = globals->collectionrbc_ntriangles;
         int (*indices)[3] = globals->collectionrbc_indices;
-	_dump("xyz/rbcs.xyz", "ply/rbcs-%04d.ply", comm, cartcomm, ntriangles, n / nvertices, nvertices, indices, p, a, n, iddatadump);
+	_dump(globals, "xyz/rbcs.xyz", "ply/rbcs-%04d.ply", comm, cartcomm, ntriangles, n / nvertices, nvertices, indices, p, a, n, iddatadump);
     }
 };

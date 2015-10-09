@@ -47,6 +47,7 @@ namespace KernelsContact
 
     __global__ 	void halo(const int nparticles_padded, const int ncellentries, const int nsolutes, const float seed);
 
+    /* currently unused
     void setup()
     {
 	texCellsStart.channelDesc = cudaCreateChannelDesc<int>();
@@ -61,7 +62,7 @@ namespace KernelsContact
 
 	CUDA_CHECK(cudaFuncSetCacheConfig(bulk_3tpp, cudaFuncCachePreferL1));
 	CUDA_CHECK(cudaFuncSetCacheConfig(halo, cudaFuncCachePreferL1));
-    }
+    }*/
 }
 
 ComputeContact::ComputeContact(MPI_Comm comm):

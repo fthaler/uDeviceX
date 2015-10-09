@@ -18,6 +18,8 @@
 #define cuda_printf(...) do { printf(__VA_ARGS__); } while(0)
 #endif
 
+class Globals;
+
 enum
 {
     XSIZE_SUBDOMAIN = 48,
@@ -37,9 +39,11 @@ const float sigmaf = sigma / sqrt(dt);
 const float aij = 25;
 const float hydrostatic_a = 0.05;
 
+/* moved global variables to globals.h for use with AMPI
 extern float tend;
 extern bool walls, pushtheflow, doublepoiseuille, rbcs, ctcs, xyz_dumps, hdf5field_dumps, hdf5part_dumps, is_mps_enabled, contactforces;
 extern int steps_per_report, steps_per_dump, wall_creation_stepid, nvtxstart, nvtxstop;
+*/
 
 #include <cstdlib>
 #include <cstdio>
@@ -410,12 +414,14 @@ PinnedHostBuffer(int n = 0): capacity(0), size(0), data(NULL), devptr(NULL) { re
 //building the cell lists involve a reordering of the particle array (!)
 struct CellLists
 {
+    // global variable pointer for AMPI
+    Globals* globals;
     const int ncells, LX, LY, LZ;
 
     int * start, * count;
 
-CellLists(const int LX, const int LY, const int LZ):
-    ncells(LX * LY * LZ + 1), LX(LX), LY(LY), LZ(LZ)
+CellLists(Globals* globals, const int LX, const int LY, const int LZ):
+    globals(globals), ncells(LX * LY * LZ + 1), LX(LX), LY(LY), LZ(LZ)
 	{
 	    CUDA_CHECK(cudaMalloc(&start, sizeof(int) * ncells));
 	    CUDA_CHECK(cudaMalloc(&count, sizeof(int) * ncells));
@@ -439,9 +445,11 @@ void diagnostics(MPI_Comm comm, MPI_Comm cartcomm, Particle * _particles, int n,
 
 void report_host_memory_usage(MPI_Comm comm, FILE * foutput);
 
-
 class LocalComm
 {
+    // global variable pointer for AMPI
+    Globals* globals;
+
     MPI_Comm local_comm, active_comm;
     int local_rank, local_nranks;
     int rank, nranks;
@@ -450,7 +458,7 @@ class LocalComm
     int len;
 
 public:
-    LocalComm();
+    LocalComm(Globals* globals);
 
     void initialize(MPI_Comm active_comm);
 
@@ -464,9 +472,6 @@ public:
 
     MPI_Comm get_comm() { return local_comm;  }
 };
-
-extern LocalComm localcomm;
-
 
 inline MPI_Comm setup_reorder_comm(MPI_Comm init_comm, int rank, int nranks)
 {

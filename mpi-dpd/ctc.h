@@ -35,7 +35,7 @@ public:
 
 RedistributeCTCs(Globals* globals, MPI_Comm _cartcomm):RedistributeRBCs(globals, _cartcomm)
     {
-	if (ctcs)
+	if (globals->ctcs)
 	{
 	    CudaCTC::Extent host_extent;
         CudaCTC::setup(nvertices, host_extent);
@@ -62,7 +62,7 @@ public:
 
 CollectionCTC(Globals* globals, MPI_Comm cartcomm) : CollectionRBC(globals, cartcomm)
     {
-	if (ctcs)
+	if (globals->ctcs)
 	{
 	    CudaCTC::Extent extent;
 	    CudaCTC::setup(globals->collectionctc_nvertices, extent);
@@ -77,11 +77,11 @@ CollectionCTC(Globals* globals, MPI_Comm cartcomm) : CollectionRBC(globals, cart
 	}
     }
 
-    static void dump(MPI_Comm comm, MPI_Comm cartcomm, Particle * const p, const Acceleration * const a, const int n, const int iddatadump)
+    static void dump(Globals* globals, MPI_Comm comm, MPI_Comm cartcomm, Particle * const p, const Acceleration * const a, const int n, const int iddatadump)
     {
         int nvertices = globals->collectionctc_nvertices;
         int ntriangles = globals->collectionctc_ntriangles;
         int (*indices)[3] = globals->collectionctc_indices;
-	_dump("xyz/ctcs.xyz", "ply/ctcs-%04d.ply", comm, cartcomm, ntriangles, n / nvertices, nvertices, indices, p, a, n, iddatadump);
+	_dump(globals, "xyz/ctcs.xyz", "ply/ctcs-%04d.ply", comm, cartcomm, ntriangles, n / nvertices, nvertices, indices, p, a, n, iddatadump);
     }
 };

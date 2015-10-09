@@ -36,11 +36,8 @@
 #include "ctc.h"
 #include "io.h"
 
-class Simulation
+class Simulation : public GlobalsInjector
 {
-    // global variable pointer for AMPI
-    Globals* globals;
-
     ParticleArray particles_pingpong[2];
     ParticleArray * particles, * newparticles;
     SimpleDeviceBuffer<float4> xyzouvwo;

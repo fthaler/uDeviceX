@@ -15,6 +15,7 @@
 #include <cuda-dpd.h>
 
 #include "common.h"
+#include "globals.h"
 
 #ifdef _USE_NVTX_
 bool NvtxTracer::currently_profiling = false;
@@ -37,8 +38,8 @@ void CellLists::build(Particle * const p, const int n, cudaStream_t stream, int 
 	if (n > 0)
 	{
 	    const bool vanilla_cases =
-		is_mps_enabled && !(XSIZE_SUBDOMAIN < 64 && YSIZE_SUBDOMAIN < 64 && ZSIZE_SUBDOMAIN < 64) ||
-		localcomm.get_size() == 8 && XSIZE_SUBDOMAIN >= 96 && YSIZE_SUBDOMAIN >= 96 && ZSIZE_SUBDOMAIN >= 96;
+		globals->is_mps_enabled && !(XSIZE_SUBDOMAIN < 64 && YSIZE_SUBDOMAIN < 64 && ZSIZE_SUBDOMAIN < 64) ||
+		globals->localcomm.get_size() == 8 && XSIZE_SUBDOMAIN >= 96 && YSIZE_SUBDOMAIN >= 96 && ZSIZE_SUBDOMAIN >= 96;
 
 	    if (vanilla_cases)
 		build_clists_vanilla((float * )p, n, 1, LX, LY, LZ, -LX/2, -LY/2, -LZ/2, order, start, count,  NULL, stream, (float *)src);
@@ -149,7 +150,7 @@ inline size_t hash_string(const char *buf)
 }
 
 
-LocalComm::LocalComm()
+LocalComm::LocalComm(Globals* globals) : globals(globals)
 {
     local_comm = MPI_COMM_NULL;
     local_rank = 0;
@@ -175,7 +176,7 @@ void LocalComm::initialize(MPI_Comm _active_comm)
 
 void LocalComm::barrier()
 {
-    if (!is_mps_enabled || local_nranks == 1) return;
+    if (!globals->is_mps_enabled || local_nranks == 1) return;
 
     MPI_CHECK(MPI_Barrier(local_comm));
 }

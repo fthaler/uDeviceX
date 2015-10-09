@@ -21,7 +21,7 @@ RedistributeRBCs::RedistributeRBCs(Globals* globals, MPI_Comm _cartcomm): global
     assert(XSIZE_SUBDOMAIN % 2 == 0 && YSIZE_SUBDOMAIN % 2 == 0 && ZSIZE_SUBDOMAIN % 2 == 0);
     assert(XSIZE_SUBDOMAIN >= 2 && YSIZE_SUBDOMAIN >= 2 && ZSIZE_SUBDOMAIN >= 2);
     
-    if (rbcs)
+    if (globals->rbcs)
     {
 	CudaRBC::Extent host_extent;
 	CudaRBC::setup(nvertices, host_extent);

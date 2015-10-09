@@ -22,12 +22,14 @@
 #include "argument-parser.h"
 #include "simulation.h"
 
+/* moved global variables to globals.h for use with AMPI
 bool currently_profiling = false;
 float tend;
 bool walls, pushtheflow, doublepoiseuille, rbcs, ctcs, xyz_dumps, hdf5field_dumps, hdf5part_dumps, is_mps_enabled, adjust_message_sizes, contactforces;
 int steps_per_report, steps_per_dump, wall_creation_stepid, nvtxstart, nvtxstop;
 
 LocalComm localcomm;
+*/
 
 namespace SignalHandling
 {
@@ -69,21 +71,22 @@ int main(int argc, char ** argv)
 
     ArgumentParser argp(vector<string>(argv + 4, argv + argc));
 
-    tend = argp("-tend").asDouble(50);
-    walls = argp("-walls").asBool(false);
-    pushtheflow = argp("-pushtheflow").asBool(false);
-    doublepoiseuille = argp("-doublepoiseuille").asBool(false);
-    rbcs = argp("-rbcs").asBool(false);
-    ctcs = argp("-ctcs").asBool(false);
-    xyz_dumps = argp("-xyz_dumps").asBool(false);
-    hdf5field_dumps = argp("-hdf5field_dumps").asBool(false);
-    steps_per_report = argp("-steps_per_report").asInt(1000);
-    steps_per_dump = argp("-steps_per_dump").asInt(1000);
-    wall_creation_stepid = argp("-wall_creation_stepid").asInt(5000);
-    nvtxstart = argp("-nvtxstart").asInt(10400);
-    nvtxstop = argp("-nvtxstop").asInt(10500);
-    adjust_message_sizes = argp("-adjust_message_sizes").asBool(false);
-    contactforces = argp("-contactforces").asBool(false);
+    Globals globals;
+    globals.tend = argp("-tend").asDouble(50);
+    globals.walls = argp("-walls").asBool(false);
+    globals.pushtheflow = argp("-pushtheflow").asBool(false);
+    globals.doublepoiseuille = argp("-doublepoiseuille").asBool(false);
+    globals.rbcs = argp("-rbcs").asBool(false);
+    globals.ctcs = argp("-ctcs").asBool(false);
+    globals.xyz_dumps = argp("-xyz_dumps").asBool(false);
+    globals.hdf5field_dumps = argp("-hdf5field_dumps").asBool(false);
+    globals.steps_per_report = argp("-steps_per_report").asInt(1000);
+    globals.steps_per_dump = argp("-steps_per_dump").asInt(1000);
+    globals.wall_creation_stepid = argp("-wall_creation_stepid").asInt(5000);
+    globals.nvtxstart = argp("-nvtxstart").asInt(10400);
+    globals.nvtxstop = argp("-nvtxstop").asInt(10500);
+    globals.adjust_message_sizes = argp("-adjust_message_sizes").asBool(false);
+    globals.contactforces = argp("-contactforces").asBool(false);
 
 #ifndef _NO_DUMPS_
     const bool mpi_thread_safe = argp("-mpi_thread_safe").asBool(true);
@@ -102,7 +105,7 @@ int main(int argc, char ** argv)
     CUDA_CHECK(cudaDeviceReset());
 
     {
-	is_mps_enabled = false;
+	globals.is_mps_enabled = false;
 
 	const char * mps_variables[] = {
 	    "CRAY_CUDA_MPS",
@@ -112,7 +115,7 @@ int main(int argc, char ** argv)
 	};
 
 	for(int i = 0; i < 4; ++i)
-	    is_mps_enabled |= getenv(mps_variables[i])!= NULL && atoi(getenv(mps_variables[i])) != 0;
+	    globals.is_mps_enabled |= getenv(mps_variables[i])!= NULL && atoi(getenv(mps_variables[i])) != 0;
     }
 
     int nranks, rank;
@@ -231,12 +234,12 @@ int main(int argc, char ** argv)
 	    fflush(stdout);
 	}
 
-	localcomm.initialize(activecomm);
+	// localcomm.initialize(activecomm);
+    globals.mpiDependentInit(activecomm);
 
 	MPI_CHECK(MPI_Barrier(activecomm));
 	
-    Globals* globals = new Globals;
-	Simulation simulation(globals, cartcomm, activecomm, SignalHandling::check_termination_request);
+	Simulation simulation(&globals, cartcomm, activecomm, SignalHandling::check_termination_request);
 
 	simulation.run();
     }
