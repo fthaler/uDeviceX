@@ -16,6 +16,7 @@
 #include <string>
 
 #include "common.h"
+#include "globals.h"
 
 struct ParticleArray
 {
@@ -40,17 +41,19 @@ struct ParticleArray
 
 class CollectionRBC : public ParticleArray
 {
+/* moved static variables to globals.h for use with AMPI
     static int (*indices)[3];
     static int ntriangles;
     static int nvertices;
+*/
 
 protected:
-
+    static Globals* globals;
     MPI_Comm cartcomm;
 
     int ncells, myrank, dims[3], periods[3], coords[3];
 
-    virtual int _ntriangles() const { return ntriangles; }
+    virtual int _ntriangles() const { return globals->collectionrbc_ntriangles; }
 
     virtual void _initialize(float *device_xyzuvw, const float (*transform)[4]);
 
@@ -61,9 +64,9 @@ protected:
 
 public:
 
-    virtual int get_nvertices() const { return nvertices; }
+    virtual int get_nvertices() const { return globals->collectionrbc_nvertices; }
 
-    CollectionRBC(MPI_Comm cartcomm);
+    CollectionRBC(Globals* globals, MPI_Comm cartcomm);
 
     void setup(const char * const path2ic);
 
@@ -80,6 +83,9 @@ public:
     static void dump(MPI_Comm comm, MPI_Comm cartcomm,
 		     Particle * const p, const Acceleration * const a, const int n, const int iddatadump)
     {
+        int nvertices = globals->collectionrbc_nvertices;
+        int ntriangles = globals->collectionrbc_ntriangles;
+        int (*indices)[3] = globals->collectionrbc_indices;
 	_dump("xyz/rbcs.xyz", "ply/rbcs-%04d.ply", comm, cartcomm, ntriangles, n / nvertices, nvertices, indices, p, a, n, iddatadump);
     }
 };

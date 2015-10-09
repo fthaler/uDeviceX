@@ -722,13 +722,13 @@ Simulation::Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm,
 
     if (rbcs)
     {
-	rbcscoll = new CollectionRBC(cartcomm);
+	rbcscoll = new CollectionRBC(globals, cartcomm);
 	rbcscoll->setup("rbcs-ic.txt");
     }
 
     if (ctcs)
     {
-	ctcscoll = new CollectionCTC(cartcomm);
+	ctcscoll = new CollectionCTC(globals, cartcomm);
 	ctcscoll->setup("ctcs-ic.txt");
     }
 

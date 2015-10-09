@@ -19,9 +19,12 @@
 #include "io.h"
 #include "ctc.h"
 
+/* moved static variables to globals.h for use with AMPI
 int (*CollectionRBC::indices)[3] = NULL, CollectionRBC::ntriangles = -1, CollectionRBC::nvertices = -1;
 
 int (*CollectionCTC::indices)[3] = NULL, CollectionCTC::ntriangles = -1, CollectionCTC::nvertices = -1;
+*/
+Globals* CollectionRBC::globals = NULL;
 
 namespace ParticleKernels
 {
@@ -296,15 +299,21 @@ struct TransformedExtent
     float transform[4][4];
 };
 
-CollectionRBC::CollectionRBC(MPI_Comm cartcomm):
+CollectionRBC::CollectionRBC(Globals* _globals, MPI_Comm cartcomm):
 cartcomm(cartcomm), ncells(0)
 {
+    assert(globals == NULL || globals == _globals);
+    if (globals == NULL)
+        globals = _globals;
+
     MPI_CHECK(MPI_Comm_rank(cartcomm, &myrank));
     MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
 
-    CudaRBC::get_triangle_indexing(indices, ntriangles);
+    CudaRBC::get_triangle_indexing(
+            globals->collectionrbc_indices,
+            globals->collectionrbc_ntriangles);
     CudaRBC::Extent extent;
-    CudaRBC::setup(nvertices, extent);
+    CudaRBC::setup(globals->collectionrbc_nvertices, extent);
 
 /*    assert(extent.xmax - extent.xmin < XSIZE_SUBDOMAIN);
     assert(extent.ymax - extent.ymin < YSIZE_SUBDOMAIN);

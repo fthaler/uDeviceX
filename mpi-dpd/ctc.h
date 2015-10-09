@@ -45,9 +45,11 @@ RedistributeCTCs(Globals* globals, MPI_Comm _cartcomm):RedistributeRBCs(globals,
 
 class CollectionCTC : public CollectionRBC
 {
+/* moved static variables to globals.h for use with AMPI
     static int (*indices)[3], ntriangles, nvertices;
+*/
 
-    int _ntriangles() const { return ntriangles; }
+    int _ntriangles() const { return globals->collectionctc_ntriangles; }
 
     void _initialize(float *device_xyzuvw, const float (*transform)[4])
     {
@@ -56,25 +58,30 @@ class CollectionCTC : public CollectionRBC
 
 public:
 
-    int get_nvertices() const { return nvertices; }
+    int get_nvertices() const { return globals->collectionctc_nvertices; }
 
-CollectionCTC(MPI_Comm cartcomm) : CollectionRBC(cartcomm)
+CollectionCTC(Globals* globals, MPI_Comm cartcomm) : CollectionRBC(globals, cartcomm)
     {
 	if (ctcs)
 	{
 	    CudaCTC::Extent extent;
-	    CudaCTC::setup(nvertices, extent);
+	    CudaCTC::setup(globals->collectionctc_nvertices, extent);
 
 	    assert(extent.xmax - extent.xmin < XSIZE_SUBDOMAIN);
 	    assert(extent.ymax - extent.ymin < YSIZE_SUBDOMAIN);
 	    assert(extent.zmax - extent.zmin < ZSIZE_SUBDOMAIN);
 
-	    CudaCTC::get_triangle_indexing(indices, ntriangles);
+	    CudaCTC::get_triangle_indexing(
+                globals->collectionctc_indices,
+                globals->collectionctc_ntriangles);
 	}
     }
 
     static void dump(MPI_Comm comm, MPI_Comm cartcomm, Particle * const p, const Acceleration * const a, const int n, const int iddatadump)
     {
+        int nvertices = globals->collectionctc_nvertices;
+        int ntriangles = globals->collectionctc_ntriangles;
+        int (*indices)[3] = globals->collectionctc_indices;
 	_dump("xyz/ctcs.xyz", "ply/ctcs-%04d.ply", comm, cartcomm, ntriangles, n / nvertices, nvertices, indices, p, a, n, iddatadump);
     }
 };
