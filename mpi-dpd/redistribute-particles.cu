@@ -36,10 +36,12 @@ namespace RedistributeParticlesKernels
 
     __device__ bool failed;
 
+    /* moved to redistribute-particles.h as class members for AMPI
     int ntexparticles = 0;
     float2 * texparticledata;
     texture<float, cudaTextureType1D> texAllParticles;
     texture<float2, cudaTextureType1D> texAllParticlesFloat2;
+    */
 
 #if !defined(__CUDA_ARCH__)
 #warning __CUDA_ARCH__ not defined! assuming 350
@@ -59,7 +61,7 @@ namespace RedistributeParticlesKernels
 	    pack_count[threadIdx.x] = 0;
     }
 
-    __global__ void scatter_halo_indices_pack(const int np)
+    __global__ void scatter_halo_indices_pack(cudaTextureObject_t texAllParticles, const int np)
     {
 	const int pid = threadIdx.x + blockDim.x * blockIdx.x;
 
@@ -67,7 +69,7 @@ namespace RedistributeParticlesKernels
 	{
 	    float xp[3];
 	    for(int c = 0; c < 3; ++c)
-		xp[c] = tex1Dfetch(texAllParticles, 6 * pid + c);
+		xp[c] = tex1Dfetch<float>(texAllParticles, 6 * pid + c);
 
 	    const int L[3] = { XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN };
 
@@ -142,7 +144,7 @@ namespace RedistributeParticlesKernels
     }
 #endif
 
-    __global__ void pack(const int nparticles, const int nfloat2s)
+    __global__ void pack(cudaTextureObject_t texAllParticlesFloat2, const int nparticles, const int nfloat2s)
     {
 
 	assert(blockDim.x * gridDim.x >= nfloat2s);
@@ -188,7 +190,7 @@ namespace RedistributeParticlesKernels
 	const int d = c + 3 * offset;
 	assert (d < pack_buffers[idpack].capacity * 3);
 
-	pack_buffers[idpack].buffer[d] = tex1Dfetch(texAllParticlesFloat2, c + 3 * pid);
+	pack_buffers[idpack].buffer[d] = tex1Dfetch<float2>(texAllParticlesFloat2, c + 3 * pid);
     }
 
     __global__ void subindex_remote(const uint nparticles_padded,
@@ -304,7 +306,7 @@ namespace RedistributeParticlesKernels
 	xchg_aos2f(srclane0, srclane1, start, s0.z, s1.z);
     }
 
-    __global__ void gather_particles(const uint * const scattered_indices,
+    __global__ void gather_particles(cudaTextureObject_t texAllParticlesFloat2, const uint * const scattered_indices,
 				     const float2 * const remoteparticles, const int nremoteparticles,
 				     const int noldparticles,
 				     const int nparticles,
@@ -348,9 +350,9 @@ namespace RedistributeParticlesKernels
 		    cuda_printf("ooops pid %d spid %d noldp%d\n", pid, spid, noldparticles);
 
 		assert(spid < noldparticles);
-		data0 = tex1Dfetch(texAllParticlesFloat2, 0 + 3 * spid);
-		data1 = tex1Dfetch(texAllParticlesFloat2, 1 + 3 * spid);
-		data2 = tex1Dfetch(texAllParticlesFloat2, 2 + 3 * spid);
+		data0 = tex1Dfetch<float2>(texAllParticlesFloat2, 0 + 3 * spid);
+		data1 = tex1Dfetch<float2>(texAllParticlesFloat2, 1 + 3 * spid);
+		data2 = tex1Dfetch<float2>(texAllParticlesFloat2, 2 + 3 * spid);
 	    }
 	}
 
@@ -500,7 +502,7 @@ subindices_remote(1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSI
 	default_message_sizes[i] = estimate;
     }
 
-    RedistributeParticlesKernels::texAllParticles.channelDesc = cudaCreateChannelDesc<float>();
+    /*RedistributeParticlesKernels::texAllParticles.channelDesc = cudaCreateChannelDesc<float>();
     RedistributeParticlesKernels::texAllParticles.filterMode = cudaFilterModePoint;
     RedistributeParticlesKernels::texAllParticles.mipmapFilterMode = cudaFilterModePoint;
     RedistributeParticlesKernels::texAllParticles.normalized = 0;
@@ -508,7 +510,7 @@ subindices_remote(1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSI
     RedistributeParticlesKernels::texAllParticlesFloat2.channelDesc = cudaCreateChannelDesc<float2>();
     RedistributeParticlesKernels::texAllParticlesFloat2.filterMode = cudaFilterModePoint;
     RedistributeParticlesKernels::texAllParticlesFloat2.mipmapFilterMode = cudaFilterModePoint;
-    RedistributeParticlesKernels::texAllParticlesFloat2.normalized = 0;
+    RedistributeParticlesKernels::texAllParticlesFloat2.normalized = 0;*/
 
     CUDA_CHECK(cudaEventCreate(&evpacking, cudaEventDisableTiming));
     CUDA_CHECK(cudaEventCreate(&evsizes, cudaEventDisableTiming));
@@ -618,18 +620,54 @@ void RedistributeParticles::pack(const Particle * const particles, const int npa
 	_post_recv();
 
     size_t textureoffset;
-    if (nparticles)
-    CUDA_CHECK(cudaBindTexture(&textureoffset, &RedistributeParticlesKernels::texAllParticles, particles,
+    if (nparticles) {
+        if (texAllParticles != 0)
+            CUDA_CHECK(cudaDestroyTextureObject(texAllParticles));
+
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) particles;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<float>();
+        resDesc.res.linear.sizeInBytes = sizeof(float) * 6 * nparticles;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+
+        CUDA_CHECK(cudaCreateTextureObject(&texAllParticles,
+                                           &resDesc, &texDesc, NULL));
+    /*CUDA_CHECK(cudaBindTexture(&textureoffset, &RedistributeParticlesKernels::texAllParticles, particles,
 			       &RedistributeParticlesKernels::texAllParticles.channelDesc,
-			       sizeof(float) * 6 * nparticles));
+			       sizeof(float) * 6 * nparticles));*/
+    }
 
-    if (nparticles)
-    CUDA_CHECK(cudaBindTexture(&textureoffset, &RedistributeParticlesKernels::texAllParticlesFloat2, particles,
+    if (nparticles) {
+        if (texAllParticlesFloat2 != 0)
+            CUDA_CHECK(cudaDestroyTextureObject(texAllParticlesFloat2));
+
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) particles;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<float2>();
+        resDesc.res.linear.sizeInBytes = sizeof(float) * 6 * nparticles;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+
+        CUDA_CHECK(cudaCreateTextureObject(&texAllParticlesFloat2,
+                                           &resDesc, &texDesc, NULL));
+    /*CUDA_CHECK(cudaBindTexture(&textureoffset, &RedistributeParticlesKernels::texAllParticlesFloat2, particles,
 			       &RedistributeParticlesKernels::texAllParticlesFloat2.channelDesc,
-			       sizeof(float) * 6 * nparticles));
+			       sizeof(float) * 6 * nparticles));*/
+    }
 
-    RedistributeParticlesKernels::ntexparticles = nparticles;
-    RedistributeParticlesKernels::texparticledata = (float2 *)particles;
+    ntexparticles = nparticles;
+    texparticledata = (float2 *)particles;
 
 pack_attempt:
 
@@ -640,7 +678,7 @@ pack_attempt:
     RedistributeParticlesKernels::setup<<<1, 32, 0, mystream>>>();
 
     if (nparticles)
-	RedistributeParticlesKernels::scatter_halo_indices_pack<<< (nparticles + 127) / 128, 128, 0, mystream>>>(nparticles);
+	RedistributeParticlesKernels::scatter_halo_indices_pack<<< (nparticles + 127) / 128, 128, 0, mystream>>>(texAllParticles, nparticles);
 
     RedistributeParticlesKernels::tiny_scan<<<1, 32, 0, mystream>>>(nparticles, packbuffers[0].capacity, packsizes.devptr, failure.devptr);
 
@@ -651,7 +689,7 @@ pack_attempt:
 #endif
 
     if (nparticles)
-	RedistributeParticlesKernels::pack<<< (3 * nparticles + 127) / 128, 128, 0, mystream>>> (nparticles, nparticles * 3);
+	RedistributeParticlesKernels::pack<<< (3 * nparticles + 127) / 128, 128, 0, mystream>>> (texAllParticlesFloat2, nparticles, nparticles * 3);
 
     CUDA_CHECK(cudaEventRecord(evpacking, mystream));
 
@@ -750,7 +788,7 @@ void RedistributeParticles::bulk(const int nparticles, int * const cellstarts, i
 
     if (nparticles)
     subindex_local<false><<< (nparticles + 127) / 128, 128, 0, mystream>>>
-	(nparticles, RedistributeParticlesKernels::texparticledata, cellcounts, subindices.data);
+	(nparticles, texparticledata, cellcounts, subindices.data);
 /*
 #ifndef NDEBUG
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -881,8 +919,8 @@ void RedistributeParticles::recv_unpack(Particle * const particles, float4 * con
 
     if (nparticles)
     RedistributeParticlesKernels::gather_particles<<< (nparticles + 127) / 128, 128, 0, mystream>>>
-	(scattered_indices.data, (float2 *)remote_particles.data, nhalo,
-	 RedistributeParticlesKernels::ntexparticles, nparticles, (float2 *)particles, xyzouvwo, xyzo_half);
+	(texAllParticlesFloat2, scattered_indices.data, (float2 *)remote_particles.data, nhalo,
+	 ntexparticles, nparticles, (float2 *)particles, xyzouvwo, xyzo_half);
 
     CUDA_CHECK(cudaPeekAtLastError());
 

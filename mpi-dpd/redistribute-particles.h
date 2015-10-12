@@ -57,6 +57,10 @@ public:
     float pinned_data(const int code, const int entry) { return pinnedhost_sendbufs[code][entry]; }
    
 private:
+    // moved globals from redistribute-particles.cu
+    int ntexparticles;
+    float2* texparticledata;
+    cudaTextureObject_t texAllParticles, texAllParticlesFloat2;
 
     MPI_Comm cartcomm;
 
