@@ -30,10 +30,12 @@ namespace RedistributeParticlesKernels
 
     __constant__ RedistributeParticles::UnpackBuffer unpack_buffers[27];
 
+    // TODO: remove device variables for AMPI compatibility
     __device__ int pack_count[27], pack_start_padded[28];
 
     __constant__ int unpack_start[28], unpack_start_padded[28];
 
+    // TODO: remove device variables for AMPI compatibility
     __device__ bool failed;
 
     /* moved to redistribute-particles.h as class members for AMPI
