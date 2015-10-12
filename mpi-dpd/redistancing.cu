@@ -14,11 +14,12 @@
 
 #include "common.h"
 
-#define _ACCESS(ary, x, y, z) tex3D(tex##ary, x, y, z)
+#define _ACCESS(ary, x, y, z) tex3D<float>(tex##ary, x, y, z)
 
 namespace Redistancing
 {
-    texture<float, 3, cudaReadModeElementType> texphi0, texphi;
+    /* replaced by local texture objects
+    texture<float, 3, cudaReadModeElementType> texphi0, texphi;*/
 
     struct Info
     {
@@ -29,7 +30,7 @@ namespace Redistancing
     __constant__ Info info;
 
     template<int d>
-    __device__ inline bool anycrossing_dir(int ix, int iy, int iz, const float sgn0) 
+    __device__ inline bool anycrossing_dir(cudaTextureObject_t texphi0, int ix, int iy, int iz, const float sgn0) 
     {
         const int dx = d == 0, dy = d == 1, dz = d == 2;
 	
@@ -39,15 +40,15 @@ namespace Redistancing
         return (fm1 * sgn0 < 0 || fp1 * sgn0 < 0);
     }
     
-    __device__  inline bool anycrossing(int ix, int iy, int iz, const float sgn0)
+    __device__  inline bool anycrossing(cudaTextureObject_t texphi0, int ix, int iy, int iz, const float sgn0)
     {
         return
-	    anycrossing_dir<0>(ix, iy, iz, sgn0) ||
-	    anycrossing_dir<1>(ix, iy, iz, sgn0) ||
-	    anycrossing_dir<2>(ix, iy, iz, sgn0) ;
+	    anycrossing_dir<0>(texphi0, ix, iy, iz, sgn0) ||
+	    anycrossing_dir<1>(texphi0, ix, iy, iz, sgn0) ||
+	    anycrossing_dir<2>(texphi0, ix, iy, iz, sgn0) ;
     }
 
-    __device__  inline float simple_scheme(int ix, int iy, int iz, float sgn0, float myphi0) 
+    __device__  inline float simple_scheme(cudaTextureObject_t texphi0, cudaTextureObject_t texphi, int ix, int iy, int iz, float sgn0, float myphi0) 
     {
 	float mindistance = 1e6f;
 	
@@ -81,7 +82,7 @@ namespace Redistancing
 	return sgn0 * mindistance;
     }
 
-    __device__ float sussman_scheme(int ix, int iy, int iz, float sgn0) 
+    __device__ float sussman_scheme(cudaTextureObject_t texphi0, cudaTextureObject_t texphi, int ix, int iy, int iz, float sgn0) 
     {
         const float phicenter =  _ACCESS(phi, ix, iy, iz);
         
@@ -114,7 +115,7 @@ namespace Redistancing
         }
     }
     
-    __global__ void step(float * dst)
+    __global__ void step(cudaTextureObject_t texphi0, cudaTextureObject_t texphi, float * dst)
     {
 	assert(blockDim.x * gridDim.x >= info.NX);
 	assert(blockDim.y * gridDim.y >= info.NY);
@@ -144,17 +145,17 @@ namespace Redistancing
 	float val = _ACCESS(phi, ix, iy, iz); 
 
 	if (boundary)
-	    val = simple_scheme(ix, iy, iz, sgn0, myval0);
+	    val = simple_scheme(texphi0, texphi, ix, iy, iz, sgn0, myval0);
 	else
 	{
-	    if( anycrossing(ix, iy, iz, sgn0) )
+	    if( anycrossing(texphi0, ix, iy, iz, sgn0) )
 	    {
 		//undisclosed code here, for now
 		assert(!isnan(val));
 		assert(!isinf(val));
 	    }
 	    else						
-		val = sussman_scheme(ix, iy, iz, sgn0);
+		val = sussman_scheme(texphi0, texphi, ix, iy, iz, sgn0);
 	}
 
 	dst[ix + info.NX * (iy + info.NY * iz)] = val;
@@ -206,7 +207,7 @@ void redistancing(float * host_inout, const int NX, const int NY, const int NZ, 
 	CUDA_CHECK(cudaMemcpyToSymbol(Redistancing::info, &info, sizeof(info)));
     }
 
-    Redistancing::texphi0.normalized = false;
+    /*Redistancing::texphi0.normalized = false;
     Redistancing::texphi0.filterMode = cudaFilterModePoint;
     Redistancing::texphi0.addressMode[0] = cudaAddressModeClamp;
     Redistancing::texphi0.addressMode[1] = cudaAddressModeClamp;
@@ -216,7 +217,7 @@ void redistancing(float * host_inout, const int NX, const int NY, const int NZ, 
     Redistancing::texphi.filterMode = cudaFilterModePoint;
     Redistancing::texphi.addressMode[0] = cudaAddressModeClamp;
     Redistancing::texphi.addressMode[1] = cudaAddressModeClamp;
-    Redistancing::texphi.addressMode[2] = cudaAddressModeClamp;
+    Redistancing::texphi.addressMode[2] = cudaAddressModeClamp;*/
 
     cudaChannelFormatDesc fmt = cudaCreateChannelDesc<float>();
 
@@ -229,13 +230,47 @@ void redistancing(float * host_inout, const int NX, const int NY, const int NZ, 
     copyParams.extent   = make_cudaExtent(NX, NY, NZ);
     copyParams.kind     = cudaMemcpyHostToDevice;
     CUDA_CHECK(cudaMemcpy3D(&copyParams));
-    CUDA_CHECK(cudaBindTextureToArray(Redistancing::texphi0, arrPhi0, fmt));
+
+    cudaResourceDesc resDescPhi0;
+    memset(&resDescPhi0, 0, sizeof(resDescPhi0));
+    resDescPhi0.resType = cudaResourceTypeArray;
+    resDescPhi0.res.array.array = arrPhi0;
+    cudaTextureDesc texDescPhi0;
+    memset(&texDescPhi0, 0, sizeof(texDescPhi0));
+    texDescPhi0.filterMode = cudaFilterModePoint;
+    texDescPhi0.mipmapFilterMode = cudaFilterModePoint;
+    texDescPhi0.normalizedCoords = 0;
+    texDescPhi0.addressMode[0] = cudaAddressModeClamp;
+    texDescPhi0.addressMode[1] = cudaAddressModeClamp;
+    texDescPhi0.addressMode[2] = cudaAddressModeClamp;
+
+    cudaTextureObject_t texphi0;
+    CUDA_CHECK(cudaCreateTextureObject(&texphi0, &resDescPhi0, &texDescPhi0, NULL));
+
+    //CUDA_CHECK(cudaBindTextureToArray(Redistancing::texphi0, arrPhi0, fmt));
 
     cudaArray * arrPhi;
     CUDA_CHECK(cudaMalloc3DArray (&arrPhi, &fmt, make_cudaExtent(NX, NY, NZ)));
     copyParams.dstArray = arrPhi;
     CUDA_CHECK(cudaMemcpy3D(&copyParams));
-    CUDA_CHECK(cudaBindTextureToArray(Redistancing::texphi, arrPhi, fmt));
+
+    cudaResourceDesc resDescPhi;
+    memset(&resDescPhi, 0, sizeof(resDescPhi));
+    resDescPhi.resType = cudaResourceTypeArray;
+    resDescPhi.res.array.array = arrPhi;
+    cudaTextureDesc texDescPhi;
+    memset(&texDescPhi, 0, sizeof(texDescPhi));
+    texDescPhi.filterMode = cudaFilterModePoint;
+    texDescPhi.mipmapFilterMode = cudaFilterModePoint;
+    texDescPhi.normalizedCoords = 0;
+    texDescPhi.addressMode[0] = cudaAddressModeClamp;
+    texDescPhi.addressMode[1] = cudaAddressModeClamp;
+    texDescPhi.addressMode[2] = cudaAddressModeClamp;
+
+    cudaTextureObject_t texphi;
+    CUDA_CHECK(cudaCreateTextureObject(&texphi, &resDescPhi, &texDescPhi, NULL));
+
+    //CUDA_CHECK(cudaBindTextureToArray(Redistancing::texphi, arrPhi, fmt));
 
     SimpleDeviceBuffer<float> tmp(NX * NY * NZ);
 
@@ -245,7 +280,7 @@ void redistancing(float * host_inout, const int NX, const int NY, const int NZ, 
     for(int t = 0; t <  niterations; ++t)
     {
 	//printf("timestep %d\n", t);
-	Redistancing::step<<< dim3( (NX + 7) / 8, (NY + 7) / 8, (NZ + 1) / 2), dim3(8, 8, 2) >>>(tmp.data);
+	Redistancing::step<<< dim3( (NX + 7) / 8, (NY + 7) / 8, (NZ + 1) / 2), dim3(8, 8, 2) >>>(texphi0, texphi, tmp.data);
 	//CUDA_CHECK(cudaDeviceSynchronize());
 	//CUDA_CHECK(cudaPeekAtLastError());
 	CUDA_CHECK(cudaMemcpy3DAsync(&copyParams));
@@ -255,8 +290,10 @@ void redistancing(float * host_inout, const int NX, const int NY, const int NZ, 
     
     CUDA_CHECK(cudaMemcpy(host_inout, tmp.data, sizeof(float) * NX * NY * NZ, cudaMemcpyDeviceToHost));
     
-    CUDA_CHECK(cudaUnbindTexture(Redistancing::texphi0));
-    CUDA_CHECK(cudaUnbindTexture(Redistancing::texphi));
+    CUDA_CHECK(cudaDestroyTextureObject(texphi0));
+    CUDA_CHECK(cudaDestroyTextureObject(texphi));
+    /*CUDA_CHECK(cudaUnbindTexture(Redistancing::texphi0));
+    CUDA_CHECK(cudaUnbindTexture(Redistancing::texphi));*/
     CUDA_CHECK(cudaFreeArray(arrPhi0));
     CUDA_CHECK(cudaFreeArray(arrPhi));
 
