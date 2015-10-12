@@ -31,9 +31,15 @@ class ComputeContact : public SoluteExchange::Visitor
 
     Logistic::KISS local_trunk;
 
+    // globals moved from contact.cu
+    cudaTextureObject_t texCellsStart, texCellEntries;
+
 public:
 
     ComputeContact(MPI_Comm comm);
+
+    void bind(const int * const cellsstart, const int * const cellsentries, const int ncellentries,
+              std::vector<ParticlesWrap> wsolutes, cudaStream_t stream, const int * const cellscount);
 
     void build_cells(std::vector<ParticlesWrap> wsolutes, cudaStream_t stream);
 

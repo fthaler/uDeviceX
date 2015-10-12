@@ -40,7 +40,9 @@ namespace KernelsContact
 
     __constant__ Params params;
 
+    /* moved to class member variables in contact.h for use with AMPI
     texture<int, cudaTextureType1D> texCellsStart, texCellEntries;
+    */
 
     __global__ void bulk_3tpp(const float2 * const particles, const int np, const int ncellentries, const int nsolutes,
 			      float * const acc, const float seed, const int mysoluteid);
@@ -66,7 +68,7 @@ namespace KernelsContact
 }
 
 ComputeContact::ComputeContact(MPI_Comm comm):
-cellsstart(KernelsContact::NCELLS + 16), cellscount(KernelsContact::NCELLS + 16), compressed_cellscount(KernelsContact::NCELLS + 16)
+cellsstart(KernelsContact::NCELLS + 16), cellscount(KernelsContact::NCELLS + 16), compressed_cellscount(KernelsContact::NCELLS + 16), texCellsStart(0), texCellEntries(0)
 {
     int myrank;
     MPI_CHECK( MPI_Comm_rank(comm, &myrank));
@@ -128,22 +130,61 @@ namespace KernelsContact
     __constant__ int cnsolutes[maxsolutes];
     __constant__ const float2 * csolutes[maxsolutes];
     __constant__ float * csolutesacc[maxsolutes];
+}
 
-    void bind(const int * const cellsstart, const int * const cellentries, const int ncellentries,
+void ComputeContact::bind(const int * const cellsstart, const int * const cellentries, const int ncellentries,
 	      std::vector<ParticlesWrap> wsolutes, cudaStream_t stream, const int * const cellscount)
     {
-	size_t textureoffset = 0;
+	// size_t textureoffset = 0;
 
 	if (ncellentries)
-	    CUDA_CHECK(cudaBindTexture(&textureoffset, &texCellEntries, cellentries, &texCellEntries.channelDesc,
-				       sizeof(int) * ncellentries));
+    {
+        if (texCellEntries != 0)
+            CUDA_CHECK(cudaDestroyTextureObject(texCellEntries));
 
-	assert(textureoffset == 0);
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) cellentries;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<int>();
+        resDesc.res.linear.sizeInBytes = sizeof(int) * ncellentries;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+
+        CUDA_CHECK(cudaCreateTextureObject(&texCellEntries,
+                                           &resDesc, &texDesc, NULL));
+	    /*CUDA_CHECK(cudaBindTexture(&textureoffset, &texCellEntries, cellentries, &texCellEntries.channelDesc,
+				       sizeof(int) * ncellentries));*/
+    }
+
+	//assert(textureoffset == 0);
 
 	const int ncells = XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN;
 
-	CUDA_CHECK(cudaBindTexture(&textureoffset, &texCellsStart, cellsstart, &texCellsStart.channelDesc, sizeof(int) * ncells));
-	assert(textureoffset == 0);
+    {
+        if (texCellsStart != 0)
+            CUDA_CHECK(cudaDestroyTextureObject(texCellsStart));
+
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) cellentries;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<int>();
+        resDesc.res.linear.sizeInBytes = sizeof(int) * ncells;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+
+        CUDA_CHECK(cudaCreateTextureObject(&texCellsStart,
+                                           &resDesc, &texDesc, NULL));
+	/*CUDA_CHECK(cudaBindTexture(&textureoffset, &texCellsStart, cellsstart, &texCellsStart.channelDesc, sizeof(int) * ncells));
+	assert(textureoffset == 0);*/
+    }
 
 	const int n = wsolutes.size();
 
@@ -158,10 +199,9 @@ namespace KernelsContact
 	    as[i] = (float * )wsolutes[i].a;
 	}
 
-	CUDA_CHECK(cudaMemcpyToSymbolAsync(cnsolutes, ns, sizeof(int) * n, 0, cudaMemcpyHostToDevice, stream));
-	CUDA_CHECK(cudaMemcpyToSymbolAsync(csolutes, ps, sizeof(float2 *) * n, 0, cudaMemcpyHostToDevice, stream));
-	CUDA_CHECK(cudaMemcpyToSymbolAsync(csolutesacc, as, sizeof(float *) * n, 0, cudaMemcpyHostToDevice, stream));
-    }
+	CUDA_CHECK(cudaMemcpyToSymbolAsync(KernelsContact::cnsolutes, ns, sizeof(int) * n, 0, cudaMemcpyHostToDevice, stream));
+	CUDA_CHECK(cudaMemcpyToSymbolAsync(KernelsContact::csolutes, ps, sizeof(float2 *) * n, 0, cudaMemcpyHostToDevice, stream));
+	CUDA_CHECK(cudaMemcpyToSymbolAsync(KernelsContact::csolutesacc, as, sizeof(float *) * n, 0, cudaMemcpyHostToDevice, stream));
 }
 
 void ComputeContact::build_cells(std::vector<ParticlesWrap> wsolutes, cudaStream_t stream)
@@ -218,13 +258,13 @@ void ComputeContact::build_cells(std::vector<ParticlesWrap> wsolutes, cudaStream
 
     CUDA_CHECK(cudaPeekAtLastError());
 
-    KernelsContact::bind(cellsstart.data, cellsentries.data, ntotal, wsolutes, stream, cellscount.data);
+    bind(cellsstart.data, cellsentries.data, ntotal, wsolutes, stream, cellscount.data);
 }
 
 namespace KernelsContact
 {
     __global__  __launch_bounds__(128, 10)
-	void bulk_3tpp(const float2 * const particles,
+	void bulk_3tpp(cudaTextureObject_t texCellsStart, cudaTextureObject_t texCellEntries, const float2 * const particles,
 		       const int np, const int ncellentries, const int nsolutes,
 		       float * const acc, const float seed, const int mysoluteid)
     {
@@ -266,24 +306,24 @@ namespace KernelsContact
 	    {
 		const int cid0 = xstart + XCELLS * (ycenter - 1 + YCELLS * zmy);
 		assert(cid0 >= 0 && cid0 + xcount <= NCELLS);
-		spidbase = tex1Dfetch(texCellsStart, cid0);
-		count0 = tex1Dfetch(texCellsStart, cid0 + xcount) - spidbase;
+		spidbase = tex1Dfetch<int>(texCellsStart, cid0);
+		count0 = tex1Dfetch<int>(texCellsStart, cid0 + xcount) - spidbase;
 	    }
 
 	    if (zvalid && ycenter >= 0 && ycenter < YCELLS)
 	    {
 		const int cid1 = xstart + XCELLS * (ycenter + YCELLS * zmy);
 		assert(cid1 >= 0 && cid1 + xcount <= NCELLS);
-		deltaspid1 = tex1Dfetch(texCellsStart, cid1);
-		count1 = tex1Dfetch(texCellsStart, cid1 + xcount) - deltaspid1;
+		deltaspid1 = tex1Dfetch<int>(texCellsStart, cid1);
+		count1 = tex1Dfetch<int>(texCellsStart, cid1 + xcount) - deltaspid1;
 	    }
 
 	    if (zvalid && ycenter + 1 >= 0 && ycenter + 1 < YCELLS)
 	    {
 		const int cid2 = xstart + XCELLS * (ycenter + 1 + YCELLS * zmy);
-		deltaspid2 = tex1Dfetch(texCellsStart, cid2);
+		deltaspid2 = tex1Dfetch<int>(texCellsStart, cid2);
 		assert(cid2 >= 0 && cid2 + xcount <= NCELLS);
-		count2 = tex1Dfetch(texCellsStart, cid2 + xcount) - deltaspid2;
+		count2 = tex1Dfetch<int>(texCellsStart, cid2 + xcount) - deltaspid2;
 	    }
 
 	    scan1 = count0;
@@ -305,7 +345,7 @@ namespace KernelsContact
 	    assert(slot >= 0 && slot < ncellentries);
 
 	    CellEntry ce;
-	    ce.pid = tex1Dfetch(texCellEntries, slot);
+	    ce.pid = tex1Dfetch<int>(texCellEntries, slot);
 	    const int soluteid = ce.code.w;
 
 	    assert(soluteid >= 0 && soluteid < nsolutes);
@@ -400,7 +440,7 @@ void ComputeContact::bulk(std::vector<ParticlesWrap> wsolutes, cudaStream_t stre
 
    	if (it.n)
 	    KernelsContact::bulk_3tpp<<< (3 * it.n + 127) / 128, 128, 0, stream >>>
-		((float2 *)it.p, it.n, cellsentries.size, wsolutes.size(), (float *)it.a, local_trunk.get_float(), i);
+		(texCellsStart, texCellEntries, (float2 *)it.p, it.n, cellsentries.size, wsolutes.size(), (float *)it.a, local_trunk.get_float(), i);
 
 	CUDA_CHECK(cudaPeekAtLastError());
     }
@@ -412,7 +452,7 @@ namespace KernelsContact
     __constant__ Particle * packstates[26];
     __constant__ Acceleration * packresults[26];
 
-    __global__ 	void halo(const int nparticles_padded, const int ncellentries, const int nsolutes, const float seed)
+    __global__ 	void halo(cudaTextureObject_t texCellsStart, cudaTextureObject_t texCellEntries, const int nparticles_padded, const int ncellentries, const int nsolutes, const float seed)
     {
 	assert(blockDim.x * gridDim.x >= nparticles_padded);
 
@@ -482,24 +522,24 @@ namespace KernelsContact
 		{
 		    const int cid0 = xstart + XCELLS * (ycenter - 1 + YCELLS * zmy);
 		    assert(cid0 >= 0 && cid0 + xcount <= NCELLS);
-		    spidbase = tex1Dfetch(texCellsStart, cid0);
-		    count0 = tex1Dfetch(texCellsStart, cid0 + xcount) - spidbase;
+		    spidbase = tex1Dfetch<int>(texCellsStart, cid0);
+		    count0 = tex1Dfetch<int>(texCellsStart, cid0 + xcount) - spidbase;
 		}
 
 		if (zvalid && ycenter >= 0 && ycenter < YCELLS)
 		{
 		    const int cid1 = xstart + XCELLS * (ycenter + YCELLS * zmy);
 		    assert(cid1 >= 0 && cid1 + xcount <= NCELLS);
-		    deltaspid1 = tex1Dfetch(texCellsStart, cid1);
-		    count1 = tex1Dfetch(texCellsStart, cid1 + xcount) - deltaspid1;
+		    deltaspid1 = tex1Dfetch<int>(texCellsStart, cid1);
+		    count1 = tex1Dfetch<int>(texCellsStart, cid1 + xcount) - deltaspid1;
 		}
 
 		if (zvalid && ycenter + 1 >= 0 && ycenter + 1 < YCELLS)
 		{
 		    const int cid2 = xstart + XCELLS * (ycenter + 1 + YCELLS * zmy);
-		    deltaspid2 = tex1Dfetch(texCellsStart, cid2);
+		    deltaspid2 = tex1Dfetch<int>(texCellsStart, cid2);
 		    assert(cid2 >= 0 && cid2 + xcount <= NCELLS);
-		    count2 = tex1Dfetch(texCellsStart, cid2 + xcount) - deltaspid2;
+		    count2 = tex1Dfetch<int>(texCellsStart, cid2 + xcount) - deltaspid2;
 		}
 
 		scan1 = count0;
@@ -518,7 +558,7 @@ namespace KernelsContact
 
 		assert(slot >= 0 && slot < ncellentries);
 		CellEntry ce;
-		ce.pid = tex1Dfetch(texCellEntries, slot);
+		ce.pid = tex1Dfetch<int>(texCellEntries, slot);
 		const int soluteid = ce.code.w;
 		assert(soluteid >= 0 && soluteid < nsolutes);
 		ce.code.w = 0;
@@ -635,7 +675,7 @@ void ComputeContact::halo(ParticlesWrap halos[26], cudaStream_t stream)
 
     if(nremote_padded)
     	KernelsContact::halo<<< (nremote_padded + 127) / 128, 128, 0, stream>>>
-	    (nremote_padded, cellsentries.size, nsolutes, local_trunk.get_float());
+	    (texCellsStart, texCellEntries, nremote_padded, cellsentries.size, nsolutes, local_trunk.get_float());
 
     CUDA_CHECK(cudaPeekAtLastError());
 }
