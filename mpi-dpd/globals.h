@@ -36,13 +36,6 @@ public:
     int (*collectionctc_indices)[3];
     int collectionctc_ntriangles;
     int collectionctc_nvertices;
-
-    // globals from fsi.cu
-    cudaTextureObject_t fsi_texSolventParticles;
-    cudaTextureObject_t fsi_texCellsStart;
-    /* currently unused
-    cudaTextureObject_t fsi_texCellsCount;*/
-    bool fsi_firsttime;
 };
 
 class GlobalsInjector

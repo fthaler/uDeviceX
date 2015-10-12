@@ -22,7 +22,8 @@ namespace KernelsFSI
     __constant__ Params params;
 }
 
-ComputeFSI::ComputeFSI(Globals* globals, MPI_Comm comm) : GlobalsInjector(globals)
+ComputeFSI::ComputeFSI(MPI_Comm comm) :
+    texSolventParticles(0), texCellsStart(0), firsttime(true)
 {
     int myrank;
     MPI_CHECK( MPI_Comm_rank(comm, &myrank));
@@ -40,7 +41,7 @@ ComputeFSI::ComputeFSI(Globals* globals, MPI_Comm comm) : GlobalsInjector(global
 
 namespace KernelsFSI
 {
-    /* move global variables to globals.h for use with AMPI
+    /* moved global variables to member variables in fsi.h for use with AMPI
     texture<float2, cudaTextureType1D> texSolventParticles;
     texture<int, cudaTextureType1D> texCellsStart, texCellsCount;
 
@@ -210,10 +211,11 @@ namespace KernelsFSI
 	for(int c = 0; c < 3; ++c)
 	    assert(!isnan(acc[3 * pid + c]));
     }
+}
 
-    void setup(Globals * globals, const Particle * const solvent, const int npsolvent, const int * const cellsstart, const int * const cellscount)
-    {
-	if (globals->fsi_firsttime)
+void ComputeFSI::setup(const Particle * const solvent, const int npsolvent, const int * const cellsstart, const int * const cellscount)
+{
+	if (firsttime)
 	{
 	    /*texCellsStart.channelDesc = cudaCreateChannelDesc<int>();
 	    texCellsStart.filterMode = cudaFilterModePoint;
@@ -230,15 +232,18 @@ namespace KernelsFSI
 	    texSolventParticles.mipmapFilterMode = cudaFilterModePoint;
 	    texSolventParticles.normalized = 0;*/
 
-	    CUDA_CHECK(cudaFuncSetCacheConfig(interactions_3tpp, cudaFuncCachePreferL1));
+	    CUDA_CHECK(cudaFuncSetCacheConfig(KernelsFSI::interactions_3tpp, cudaFuncCachePreferL1));
 
-	    globals->fsi_firsttime = false;
+	    firsttime = false;
 	}
 
 	//size_t textureoffset = 0;
 
 	if (npsolvent)
 	{
+        if (texSolventParticles != 0)
+            CUDA_CHECK(cudaDestroyTextureObject(texSolventParticles));
+
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
         resDesc.resType = cudaResourceTypeLinear;
@@ -251,7 +256,7 @@ namespace KernelsFSI
         texDesc.mipmapFilterMode = cudaFilterModePoint;
         texDesc.normalizedCoords = 0;
 
-        CUDA_CHECK(cudaCreateTextureObject(&globals->fsi_texSolventParticles,
+        CUDA_CHECK(cudaCreateTextureObject(&texSolventParticles,
                                            &resDesc, &texDesc, NULL));
 
 	    /*CUDA_CHECK(cudaBindTexture(&textureoffset, &texSolventParticles, solvent, &texSolventParticles.channelDesc,
@@ -262,6 +267,9 @@ namespace KernelsFSI
 	const int ncells = XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN;
 
     {
+        if (texCellsStart != 0)
+            CUDA_CHECK(cudaDestroyTextureObject(texCellsStart));
+
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
         resDesc.resType = cudaResourceTypeLinear;
@@ -274,7 +282,7 @@ namespace KernelsFSI
         texDesc.mipmapFilterMode = cudaFilterModePoint;
         texDesc.normalizedCoords = 0;
 
-        CUDA_CHECK(cudaCreateTextureObject(&globals->fsi_texCellsStart,
+        CUDA_CHECK(cudaCreateTextureObject(&texCellsStart,
                                            &resDesc, &texDesc, NULL));
     }
 	/*CUDA_CHECK(cudaBindTexture(&textureoffset, &texCellsStart, cellsstart, &texCellsStart.channelDesc, sizeof(int) * ncells));
@@ -282,6 +290,9 @@ namespace KernelsFSI
 
     /* currently unused
     {
+        if (texCellsCount != 0)
+            CUDA_CHECK(cudaDestroyTextureObject(texCellsCount));
+
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
         resDesc.resType = cudaResourceTypeLinear;
@@ -294,12 +305,11 @@ namespace KernelsFSI
         texDesc.mipmapFilterMode = cudaFilterModePoint;
         texDesc.normalizedCoords = 0;
 
-        CUDA_CHECK(cudaCreateTextureObject(&globals->fsi_texCellsCount,
+        CUDA_CHECK(cudaCreateTextureObject(&texCellsCount,
                                            &resDesc, &texDesc, NULL));
     }*/
 	/*CUDA_CHECK(cudaBindTexture(&textureoffset, &texCellsCount, cellscount, &texCellsCount.channelDesc, sizeof(int) * ncells));
 	assert(textureoffset == 0);*/
-    }
 }
 
 void ComputeFSI::bulk(std::vector<ParticlesWrap> wsolutes, cudaStream_t stream)
@@ -309,14 +319,14 @@ void ComputeFSI::bulk(std::vector<ParticlesWrap> wsolutes, cudaStream_t stream)
     if (wsolutes.size() == 0)
 	return;
 
-    KernelsFSI::setup(globals, wsolvent.p, wsolvent.n, wsolvent.cellsstart, wsolvent.cellscount);
+    setup(wsolvent.p, wsolvent.n, wsolvent.cellsstart, wsolvent.cellscount);
 
     CUDA_CHECK(cudaPeekAtLastError());
 
     for(std::vector<ParticlesWrap>::iterator it = wsolutes.begin(); it != wsolutes.end(); ++it)
    	if (it->n)
 	    KernelsFSI::interactions_3tpp<<< (3 * it->n + 127) / 128, 128, 0, stream >>>
-		(globals->fsi_texSolventParticles, globals->fsi_texCellsStart, (float2 *)it->p, it->n, wsolvent.n, (float *)it->a, (float *)wsolvent.a, local_trunk.get_float());
+		(texSolventParticles, texCellsStart, (float2 *)it->p, it->n, wsolvent.n, (float *)it->a, (float *)wsolvent.a, local_trunk.get_float());
 
     CUDA_CHECK(cudaPeekAtLastError());
 }
@@ -506,7 +516,7 @@ void ComputeFSI::halo(ParticlesWrap halos[26], cudaStream_t stream)
 {
     NVTX_RANGE("FSI/halo", NVTX_C7);
 
-    KernelsFSI::setup(globals, wsolvent.p, wsolvent.n, wsolvent.cellsstart, wsolvent.cellscount);
+    setup(wsolvent.p, wsolvent.n, wsolvent.cellsstart, wsolvent.cellscount);
 
     CUDA_CHECK(cudaPeekAtLastError());
 
@@ -553,7 +563,7 @@ void ComputeFSI::halo(ParticlesWrap halos[26], cudaStream_t stream)
 
     if(nremote_padded)
     	KernelsFSI::interactions_halo<<< (nremote_padded + 127) / 128, 128, 0, stream>>>
-	    (globals->fsi_texSolventParticles, globals->fsi_texCellsStart, nremote_padded, wsolvent.n, (float *)wsolvent.a, local_trunk.get_float());
+	    (texSolventParticles, texCellsStart, nremote_padded, wsolvent.n, (float *)wsolvent.a, local_trunk.get_float());
 
     CUDA_CHECK(cudaPeekAtLastError());
 }

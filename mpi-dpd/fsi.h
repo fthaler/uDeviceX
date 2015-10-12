@@ -16,11 +16,10 @@
 #include <rbc-cuda.h>
 
 #include "solute-exchange.h"
-#include "globals.h"
 
 #include <../dpd-rng.h>
 
-class ComputeFSI : public SoluteExchange::Visitor, public GlobalsInjector
+class ComputeFSI : public SoluteExchange::Visitor
 {
     //TODO: use cudaEvent_t evuploaded;
 
@@ -28,14 +27,22 @@ class ComputeFSI : public SoluteExchange::Visitor, public GlobalsInjector
 
     Logistic::KISS local_trunk;
 
+    // moved global variables from fsi.cu
+    cudaTextureObject_t texSolventParticles;
+    cudaTextureObject_t texCellsStart;
+    /* currently unused
+    cudaTextureObject_t texCellsCount;*/
+    bool firsttime;
+
 public:
 
     void bind_solvent(SolventWrap wrap) { wsolvent = wrap; }
 
-    ComputeFSI(Globals* globals, MPI_Comm comm);
+    ComputeFSI(MPI_Comm comm);
 
     void bulk(std::vector<ParticlesWrap> wsolutes, cudaStream_t stream);
 
     /*override of SoluteExchange::Visitor::halo*/
     void halo(ParticlesWrap solutes[26], cudaStream_t stream);
+    void setup(const Particle * const solvent, const int npsolvent, const int * const cellsstart, const int * const cellscount);
 };
