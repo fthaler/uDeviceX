@@ -239,14 +239,12 @@ namespace KernelsFSI
 
 	if (npsolvent)
 	{
-        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float2>();
-        cudaArray* array;
-        CUDA_CHECK(cudaMallocArray(&array, &channelDesc, 3 * npsolvent));
-
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
-        resDesc.resType = cudaResourceTypeArray;
-        resDesc.res.array.array = array;
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) solvent;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<float2>();
+        resDesc.res.linear.sizeInBytes = sizeof(float) * 6 * npsolvent;
         cudaTextureDesc texDesc;
         memset(&texDesc, 0, sizeof(texDesc));
         texDesc.filterMode = cudaFilterModePoint;
@@ -264,14 +262,12 @@ namespace KernelsFSI
 	const int ncells = XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN;
 
     {
-        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
-        cudaArray* array;
-        CUDA_CHECK(cudaMallocArray(&array, &channelDesc, ncells));
-
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
-        resDesc.resType = cudaResourceTypeArray;
-        resDesc.res.array.array = array;
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) cellsstart;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<int>();
+        resDesc.res.linear.sizeInBytes = sizeof(int) * ncells;
         cudaTextureDesc texDesc;
         memset(&texDesc, 0, sizeof(texDesc));
         texDesc.filterMode = cudaFilterModePoint;
@@ -286,14 +282,12 @@ namespace KernelsFSI
 
     /* currently unused
     {
-        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
-        cudaArray* array;
-        CUDA_CHECK(cudaMallocArray(&array, &channelDesc, ncells));
-
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
-        resDesc.resType = cudaResourceTypeArray;
-        resDesc.res.array.array = array;
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) cellscount;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<int>();
+        resDesc.res.linear.sizeInBytes = sizeof(int) * ncells;
         cudaTextureDesc texDesc;
         memset(&texDesc, 0, sizeof(texDesc));
         texDesc.filterMode = cudaFilterModePoint;
