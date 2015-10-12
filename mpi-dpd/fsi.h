@@ -16,10 +16,11 @@
 #include <rbc-cuda.h>
 
 #include "solute-exchange.h"
+#include "globals.h"
 
 #include <../dpd-rng.h>
 
-class ComputeFSI : public SoluteExchange::Visitor
+class ComputeFSI : public SoluteExchange::Visitor, public GlobalsInjector
 {
     //TODO: use cudaEvent_t evuploaded;
 
@@ -31,7 +32,7 @@ public:
 
     void bind_solvent(SolventWrap wrap) { wsolvent = wrap; }
 
-    ComputeFSI(MPI_Comm comm);
+    ComputeFSI(Globals* globals, MPI_Comm comm);
 
     void bulk(std::vector<ParticlesWrap> wsolutes, cudaStream_t stream);
 

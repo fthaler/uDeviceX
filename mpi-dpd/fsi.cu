@@ -22,7 +22,7 @@ namespace KernelsFSI
     __constant__ Params params;
 }
 
-ComputeFSI::ComputeFSI(MPI_Comm comm)
+ComputeFSI::ComputeFSI(Globals* globals, MPI_Comm comm) : GlobalsInjector(globals)
 {
     int myrank;
     MPI_CHECK( MPI_Comm_rank(comm, &myrank));
@@ -40,15 +40,17 @@ ComputeFSI::ComputeFSI(MPI_Comm comm)
 
 namespace KernelsFSI
 {
+    /* move global variables to globals.h for use with AMPI
     texture<float2, cudaTextureType1D> texSolventParticles;
     texture<int, cudaTextureType1D> texCellsStart, texCellsCount;
 
     bool firsttime = true;
+    */
 
     static const int NCELLS = XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN;
 
     __global__  __launch_bounds__(128, 10)
-	void interactions_3tpp(const float2 * const particles, const int np, const int nsolvent,
+	void interactions_3tpp(cudaTextureObject_t texSolventParticles, cudaTextureObject_t texCellsStart, const float2 * const particles, const int np, const int nsolvent,
 			       float * const acc, float * const accsolvent, const float seed)
     {
 #if !defined(__CUDA_ARCH__)
@@ -108,24 +110,24 @@ namespace KernelsFSI
 	    {
 		const int cid0 = xstart + XCELLS * (ycenter - 1 + YCELLS * zmy);
 		assert(cid0 >= 0 && cid0 + xcount <= NCELLS);
-		spidbase = tex1Dfetch(texCellsStart, cid0);
-		count0 = ((cid0 + xcount == NCELLS) ? nsolvent : tex1Dfetch(texCellsStart, cid0 + xcount)) - spidbase;
+		spidbase = tex1Dfetch<int>(texCellsStart, cid0);
+		count0 = ((cid0 + xcount == NCELLS) ? nsolvent : tex1Dfetch<int>(texCellsStart, cid0 + xcount)) - spidbase;
 	    }
 
 	    if (zvalid && ycenter >= 0 && ycenter < YCELLS)
 	    {
 		const int cid1 = xstart + XCELLS * (ycenter + YCELLS * zmy);
 		assert(cid1 >= 0 && cid1 + xcount <= NCELLS);
-		deltaspid1 = tex1Dfetch(texCellsStart, cid1);
-		count1 = ((cid1 + xcount == NCELLS) ? nsolvent : tex1Dfetch(texCellsStart, cid1 + xcount)) - deltaspid1;
+		deltaspid1 = tex1Dfetch<int>(texCellsStart, cid1);
+		count1 = ((cid1 + xcount == NCELLS) ? nsolvent : tex1Dfetch<int>(texCellsStart, cid1 + xcount)) - deltaspid1;
 	    }
 
 	    if (zvalid && ycenter + 1 >= 0 && ycenter + 1 < YCELLS)
 	    {
 		const int cid2 = xstart + XCELLS * (ycenter + 1 + YCELLS * zmy);
-		deltaspid2 = tex1Dfetch(texCellsStart, cid2);
+		deltaspid2 = tex1Dfetch<int>(texCellsStart, cid2);
 		assert(cid2 >= 0 && cid2 + xcount <= NCELLS);
-		count2 = ((cid2 + xcount == NCELLS) ? nsolvent : tex1Dfetch(texCellsStart, cid2 + xcount)) - deltaspid2;
+		count2 = ((cid2 + xcount == NCELLS) ? nsolvent : tex1Dfetch<int>(texCellsStart, cid2 + xcount)) - deltaspid2;
 	    }
 
 	    scan1 = count0;
@@ -148,9 +150,9 @@ namespace KernelsFSI
 	    assert(spid >= 0 && spid < nsolvent);
 
 	    const int sentry = 3 * spid;
-	    const float2 stmp0 = tex1Dfetch(texSolventParticles, sentry    );
-	    const float2 stmp1 = tex1Dfetch(texSolventParticles, sentry + 1);
-	    const float2 stmp2 = tex1Dfetch(texSolventParticles, sentry + 2);
+	    const float2 stmp0 = tex1Dfetch<float2>(texSolventParticles, sentry    );
+	    const float2 stmp1 = tex1Dfetch<float2>(texSolventParticles, sentry + 1);
+	    const float2 stmp2 = tex1Dfetch<float2>(texSolventParticles, sentry + 2);
 
 	    const float _xr = dst0.x - stmp0.x;
 	    const float _yr = dst0.y - stmp0.y;
@@ -209,11 +211,11 @@ namespace KernelsFSI
 	    assert(!isnan(acc[3 * pid + c]));
     }
 
-    void setup(const Particle * const solvent, const int npsolvent, const int * const cellsstart, const int * const cellscount)
+    void setup(Globals * globals, const Particle * const solvent, const int npsolvent, const int * const cellsstart, const int * const cellscount)
     {
-	if (firsttime)
+	if (globals->fsi_firsttime)
 	{
-	    texCellsStart.channelDesc = cudaCreateChannelDesc<int>();
+	    /*texCellsStart.channelDesc = cudaCreateChannelDesc<int>();
 	    texCellsStart.filterMode = cudaFilterModePoint;
 	    texCellsStart.mipmapFilterMode = cudaFilterModePoint;
 	    texCellsStart.normalized = 0;
@@ -226,29 +228,83 @@ namespace KernelsFSI
 	    texSolventParticles.channelDesc = cudaCreateChannelDesc<float2>();
 	    texSolventParticles.filterMode = cudaFilterModePoint;
 	    texSolventParticles.mipmapFilterMode = cudaFilterModePoint;
-	    texSolventParticles.normalized = 0;
+	    texSolventParticles.normalized = 0;*/
 
 	    CUDA_CHECK(cudaFuncSetCacheConfig(interactions_3tpp, cudaFuncCachePreferL1));
 
-	    firsttime = false;
+	    globals->fsi_firsttime = false;
 	}
 
-	size_t textureoffset = 0;
+	//size_t textureoffset = 0;
 
 	if (npsolvent)
 	{
-	    CUDA_CHECK(cudaBindTexture(&textureoffset, &texSolventParticles, solvent, &texSolventParticles.channelDesc,
+        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float2>();
+        cudaArray* array;
+        CUDA_CHECK(cudaMallocArray(&array, &channelDesc, 3 * npsolvent));
+
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeArray;
+        resDesc.res.array.array = array;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+
+        CUDA_CHECK(cudaCreateTextureObject(&globals->fsi_texSolventParticles,
+                                           &resDesc, &texDesc, NULL));
+
+	    /*CUDA_CHECK(cudaBindTexture(&textureoffset, &texSolventParticles, solvent, &texSolventParticles.channelDesc,
 				       sizeof(float) * 6 * npsolvent));
-	    assert(textureoffset == 0);
+	    assert(textureoffset == 0);*/
 	}
 
 	const int ncells = XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN;
 
-	CUDA_CHECK(cudaBindTexture(&textureoffset, &texCellsStart, cellsstart, &texCellsStart.channelDesc, sizeof(int) * ncells));
-	assert(textureoffset == 0);
+    {
+        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
+        cudaArray* array;
+        CUDA_CHECK(cudaMallocArray(&array, &channelDesc, ncells));
 
-	CUDA_CHECK(cudaBindTexture(&textureoffset, &texCellsCount, cellscount, &texCellsCount.channelDesc, sizeof(int) * ncells));
-	assert(textureoffset == 0);
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeArray;
+        resDesc.res.array.array = array;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+
+        CUDA_CHECK(cudaCreateTextureObject(&globals->fsi_texCellsStart,
+                                           &resDesc, &texDesc, NULL));
+    }
+	/*CUDA_CHECK(cudaBindTexture(&textureoffset, &texCellsStart, cellsstart, &texCellsStart.channelDesc, sizeof(int) * ncells));
+	assert(textureoffset == 0);*/
+
+    /* currently unused
+    {
+        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<int>();
+        cudaArray* array;
+        CUDA_CHECK(cudaMallocArray(&array, &channelDesc, ncells));
+
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeArray;
+        resDesc.res.array.array = array;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+
+        CUDA_CHECK(cudaCreateTextureObject(&globals->fsi_texCellsCount,
+                                           &resDesc, &texDesc, NULL));
+    }*/
+	/*CUDA_CHECK(cudaBindTexture(&textureoffset, &texCellsCount, cellscount, &texCellsCount.channelDesc, sizeof(int) * ncells));
+	assert(textureoffset == 0);*/
     }
 }
 
@@ -259,14 +315,14 @@ void ComputeFSI::bulk(std::vector<ParticlesWrap> wsolutes, cudaStream_t stream)
     if (wsolutes.size() == 0)
 	return;
 
-    KernelsFSI::setup(wsolvent.p, wsolvent.n, wsolvent.cellsstart, wsolvent.cellscount);
+    KernelsFSI::setup(globals, wsolvent.p, wsolvent.n, wsolvent.cellsstart, wsolvent.cellscount);
 
     CUDA_CHECK(cudaPeekAtLastError());
 
     for(std::vector<ParticlesWrap>::iterator it = wsolutes.begin(); it != wsolutes.end(); ++it)
    	if (it->n)
 	    KernelsFSI::interactions_3tpp<<< (3 * it->n + 127) / 128, 128, 0, stream >>>
-		((float2 *)it->p, it->n, wsolvent.n, (float *)it->a, (float *)wsolvent.a, local_trunk.get_float());
+		(globals->fsi_texSolventParticles, globals->fsi_texCellsStart, (float2 *)it->p, it->n, wsolvent.n, (float *)it->a, (float *)wsolvent.a, local_trunk.get_float());
 
     CUDA_CHECK(cudaPeekAtLastError());
 }
@@ -277,7 +333,7 @@ namespace KernelsFSI
     __constant__ Particle * packstates[26];
     __constant__ Acceleration * packresults[26];
 
-    __global__ 	void interactions_halo(const int nparticles_padded, const int nsolvent, float * const accsolvent, const float seed)
+    __global__ 	void interactions_halo(cudaTextureObject_t texSolventParticles, cudaTextureObject_t texCellsStart, const int nparticles_padded, const int nsolvent, float * const accsolvent, const float seed)
     {
 	assert(blockDim.x * gridDim.x >= nparticles_padded);
 
@@ -357,24 +413,24 @@ namespace KernelsFSI
 		{
 		    const int cid0 = xstart + XCELLS * (ycenter - 1 + YCELLS * zmy);
 		    assert(cid0 >= 0 && cid0 + xcount <= NCELLS);
-		    spidbase = tex1Dfetch(texCellsStart, cid0);
-		    count0 = ((cid0 + xcount == NCELLS) ? nsolvent : tex1Dfetch(texCellsStart, cid0 + xcount)) - spidbase;
+		    spidbase = tex1Dfetch<int>(texCellsStart, cid0);
+		    count0 = ((cid0 + xcount == NCELLS) ? nsolvent : tex1Dfetch<int>(texCellsStart, cid0 + xcount)) - spidbase;
 		}
 
 		if (zvalid && ycenter >= 0 && ycenter < YCELLS)
 		{
 		    const int cid1 = xstart + XCELLS * (ycenter + YCELLS * zmy);
 		    assert(cid1 >= 0 && cid1 + xcount <= NCELLS);
-		    deltaspid1 = tex1Dfetch(texCellsStart, cid1);
-		    count1 = ((cid1 + xcount == NCELLS) ? nsolvent : tex1Dfetch(texCellsStart, cid1 + xcount)) - deltaspid1;
+		    deltaspid1 = tex1Dfetch<int>(texCellsStart, cid1);
+		    count1 = ((cid1 + xcount == NCELLS) ? nsolvent : tex1Dfetch<int>(texCellsStart, cid1 + xcount)) - deltaspid1;
 		}
 
 		if (zvalid && ycenter + 1 >= 0 && ycenter + 1 < YCELLS)
 		{
 		    const int cid2 = xstart + XCELLS * (ycenter + 1 + YCELLS * zmy);
-		    deltaspid2 = tex1Dfetch(texCellsStart, cid2);
+		    deltaspid2 = tex1Dfetch<int>(texCellsStart, cid2);
 		    assert(cid2 >= 0 && cid2 + xcount <= NCELLS);
-		    count2 = ((cid2 + xcount == NCELLS) ? nsolvent : tex1Dfetch(texCellsStart, cid2 + xcount)) - deltaspid2;
+		    count2 = ((cid2 + xcount == NCELLS) ? nsolvent : tex1Dfetch<int>(texCellsStart, cid2 + xcount)) - deltaspid2;
 		}
 
 		scan1 = count0;
@@ -394,9 +450,9 @@ namespace KernelsFSI
 		assert(spid >= 0 && spid < nsolvent);
 
 		const int sentry = 3 * spid;
-		const float2 stmp0 = tex1Dfetch(texSolventParticles, sentry    );
-		const float2 stmp1 = tex1Dfetch(texSolventParticles, sentry + 1);
-		const float2 stmp2 = tex1Dfetch(texSolventParticles, sentry + 2);
+		const float2 stmp0 = tex1Dfetch<float2>(texSolventParticles, sentry    );
+		const float2 stmp1 = tex1Dfetch<float2>(texSolventParticles, sentry + 1);
+		const float2 stmp2 = tex1Dfetch<float2>(texSolventParticles, sentry + 2);
 
 		const float _xr = dst0.x - stmp0.x;
 		const float _yr = dst0.y - stmp0.y;
@@ -456,7 +512,7 @@ void ComputeFSI::halo(ParticlesWrap halos[26], cudaStream_t stream)
 {
     NVTX_RANGE("FSI/halo", NVTX_C7);
 
-    KernelsFSI::setup(wsolvent.p, wsolvent.n, wsolvent.cellsstart, wsolvent.cellscount);
+    KernelsFSI::setup(globals, wsolvent.p, wsolvent.n, wsolvent.cellsstart, wsolvent.cellscount);
 
     CUDA_CHECK(cudaPeekAtLastError());
 
@@ -503,7 +559,7 @@ void ComputeFSI::halo(ParticlesWrap halos[26], cudaStream_t stream)
 
     if(nremote_padded)
     	KernelsFSI::interactions_halo<<< (nremote_padded + 127) / 128, 128, 0, stream>>>
-	    (nremote_padded, wsolvent.n, (float *)wsolvent.a, local_trunk.get_float());
+	    (globals->fsi_texSolventParticles, globals->fsi_texCellsStart, nremote_padded, wsolvent.n, (float *)wsolvent.a, local_trunk.get_float());
 
     CUDA_CHECK(cudaPeekAtLastError());
 }

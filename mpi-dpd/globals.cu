@@ -16,6 +16,13 @@ Globals::Globals() : localcomm(this) {
     collectionctc_indices = NULL;
     collectionctc_ntriangles = -1;
     collectionctc_nvertices = -1;
+
+    // globals from fsi.cu
+    fsi_texSolventParticles = 0;
+    fsi_texCellsStart = 0;
+    /* currently unused
+    fsi_texCellsCount = 0;*/
+    fsi_firsttime = true;
 }
 
 void Globals::mpiDependentInit(MPI_Comm activecomm) {
