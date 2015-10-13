@@ -17,7 +17,7 @@
 #include "common.h"
 #include "globals.h"
 
-namespace PackingHalo { struct CellPackSOA; }
+namespace PackingHalo { struct CellPackSOA; struct SendBagInfo; }
 
 class SolventExchange : public GlobalsInjector
 {
@@ -25,6 +25,8 @@ class SolventExchange : public GlobalsInjector
     int ncells;
     int* cellpackstarts;
     PackingHalo::CellPackSOA* cellpacks;
+    int** srccells, **dstcells;
+    PackingHalo::SendBagInfo* baginfos;
 
     MPI_Comm cartcomm;
     MPI_Request sendreq[26 * 2], recvreq[26], sendcellsreq[26], recvcellsreq[26], sendcountreq[26], recvcountreq[26];
