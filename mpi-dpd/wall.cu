@@ -52,14 +52,15 @@ enum
 
 namespace SolidWallsKernel
 {
+    /* moved as member variables to wall.h for use with AMPI
     texture<float, 3, cudaReadModeElementType> texSDF;
 
     texture<float4, 1, cudaReadModeElementType> texWallParticles;
-    texture<int, 1, cudaReadModeElementType> texWallCellStart, texWallCellCount;
+    texture<int, 1, cudaReadModeElementType> texWallCellStart, texWallCellCount;*/
 
-    __global__ void interactions_3tpp(const float2 * const particles, const int np, const int nsolid,
+    __global__ void interactions_3tpp(cudaTextureObject_t texSDF, cudaTextureObject_t texWallParticles, cudaTextureObject_t texWallCellStart, const float2 * const particles, const int np, const int nsolid,
             float * const acc, const float seed, const float sigmaf);
-    void setup()
+    /*void setup()
     {
         texSDF.normalized = 0;
         texSDF.filterMode = cudaFilterModePoint;
@@ -84,9 +85,9 @@ namespace SolidWallsKernel
         texWallCellCount.normalized = 0;
 
         CUDA_CHECK(cudaFuncSetCacheConfig(interactions_3tpp, cudaFuncCachePreferL1));
-    }
+    }*/
 
-    __device__ float sdf(float x, float y, float z)
+    __device__ float sdf(cudaTextureObject_t texSDF, float x, float y, float z)
     {
         const int L[3] = { XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN };
         const int MARGIN[3] = { XMARGIN_WALL, YMARGIN_WALL, ZMARGIN_WALL };
@@ -105,14 +106,14 @@ namespace SolidWallsKernel
             assert(texcoord[c] >= 0 && texcoord[c] <= TEXSIZES[c]);
         }
 
-        const float s000 = tex3D(texSDF, texcoord[0] + 0, texcoord[1] + 0, texcoord[2] + 0);
-        const float s001 = tex3D(texSDF, texcoord[0] + 1, texcoord[1] + 0, texcoord[2] + 0);
-        const float s010 = tex3D(texSDF, texcoord[0] + 0, texcoord[1] + 1, texcoord[2] + 0);
-        const float s011 = tex3D(texSDF, texcoord[0] + 1, texcoord[1] + 1, texcoord[2] + 0);
-        const float s100 = tex3D(texSDF, texcoord[0] + 0, texcoord[1] + 0, texcoord[2] + 1);
-        const float s101 = tex3D(texSDF, texcoord[0] + 1, texcoord[1] + 0, texcoord[2] + 1);
-        const float s110 = tex3D(texSDF, texcoord[0] + 0, texcoord[1] + 1, texcoord[2] + 1);
-        const float s111 = tex3D(texSDF, texcoord[0] + 1, texcoord[1] + 1, texcoord[2] + 1);
+        const float s000 = tex3D<float>(texSDF, texcoord[0] + 0, texcoord[1] + 0, texcoord[2] + 0);
+        const float s001 = tex3D<float>(texSDF, texcoord[0] + 1, texcoord[1] + 0, texcoord[2] + 0);
+        const float s010 = tex3D<float>(texSDF, texcoord[0] + 0, texcoord[1] + 1, texcoord[2] + 0);
+        const float s011 = tex3D<float>(texSDF, texcoord[0] + 1, texcoord[1] + 1, texcoord[2] + 0);
+        const float s100 = tex3D<float>(texSDF, texcoord[0] + 0, texcoord[1] + 0, texcoord[2] + 1);
+        const float s101 = tex3D<float>(texSDF, texcoord[0] + 1, texcoord[1] + 0, texcoord[2] + 1);
+        const float s110 = tex3D<float>(texSDF, texcoord[0] + 0, texcoord[1] + 1, texcoord[2] + 1);
+        const float s111 = tex3D<float>(texSDF, texcoord[0] + 1, texcoord[1] + 1, texcoord[2] + 1);
 
         const float s00x = s000 * (1 - lambda[0]) + lambda[0] * s001;
         const float s01x = s010 * (1 - lambda[0]) + lambda[0] * s011;
@@ -127,7 +128,7 @@ namespace SolidWallsKernel
         return szyx;
     }
 
-    __device__ float cheap_sdf(float x, float y, float z) //within the rescaled texel width error
+    __device__ float cheap_sdf(cudaTextureObject_t texSDF, float x, float y, float z) //within the rescaled texel width error
     {
         const int L[3] = { XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN };
         const int MARGIN[3] = { XMARGIN_WALL, YMARGIN_WALL, ZMARGIN_WALL };
@@ -139,10 +140,10 @@ namespace SolidWallsKernel
         for(int c = 0; c < 3; ++c)
             texcoord[c] = 0.5001f + (int)(TEXSIZES[c] * (p[c] + L[c] / 2 + MARGIN[c]) / (L[c] + 2 * MARGIN[c]));
 
-        return tex3D(texSDF, texcoord[0], texcoord[1], texcoord[2]);
+        return tex3D<float>(texSDF, texcoord[0], texcoord[1], texcoord[2]);
     }
 
-    __device__ float3 ugrad_sdf(float x, float y, float z)
+    __device__ float3 ugrad_sdf(cudaTextureObject_t texSDF, float x, float y, float z)
     {
         const int L[3] = { XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN };
         const int MARGIN[3] = { XMARGIN_WALL, YMARGIN_WALL, ZMARGIN_WALL };
@@ -157,15 +158,15 @@ namespace SolidWallsKernel
         for(int c = 0; c < 3; ++c)
             factors[c] = TEXSIZES[c] / (2 * MARGIN[c] + L[c]);
 
-        float myval = tex3D(texSDF, tc[0], tc[1], tc[2]);
-        float xmygrad = factors[0] * (tex3D(texSDF, tc[0] + 1, tc[1], tc[2]) - myval);
-        float ymygrad = factors[1] * (tex3D(texSDF, tc[0], tc[1] + 1, tc[2]) - myval);
-        float zmygrad = factors[2] * (tex3D(texSDF, tc[0], tc[1], tc[2] + 1) - myval);
+        float myval = tex3D<float>(texSDF, tc[0], tc[1], tc[2]);
+        float xmygrad = factors[0] * (tex3D<float>(texSDF, tc[0] + 1, tc[1], tc[2]) - myval);
+        float ymygrad = factors[1] * (tex3D<float>(texSDF, tc[0], tc[1] + 1, tc[2]) - myval);
+        float zmygrad = factors[2] * (tex3D<float>(texSDF, tc[0], tc[1], tc[2] + 1) - myval);
 
         return make_float3(xmygrad, ymygrad, zmygrad);
     }
 
-    __device__ float3 grad_sdf(float x, float y, float z)
+    __device__ float3 grad_sdf(cudaTextureObject_t texSDF, float x, float y, float z)
     {
         const int L[3] = { XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN };
         const int MARGIN[3] = { XMARGIN_WALL, YMARGIN_WALL, ZMARGIN_WALL };
@@ -185,9 +186,9 @@ namespace SolidWallsKernel
             assert(tc[c] >= 0 && tc[c] <= TEXSIZES[c]);
         }
 
-        float xmygrad = (tex3D(texSDF, tc[0] + 1, tc[1], tc[2]) - tex3D(texSDF, tc[0] - 1, tc[1], tc[2]));
-        float ymygrad = (tex3D(texSDF, tc[0], tc[1] + 1, tc[2]) - tex3D(texSDF, tc[0], tc[1] - 1, tc[2]));
-        float zmygrad = (tex3D(texSDF, tc[0], tc[1], tc[2] + 1) - tex3D(texSDF, tc[0], tc[1], tc[2] - 1));
+        float xmygrad = (tex3D<float>(texSDF, tc[0] + 1, tc[1], tc[2]) - tex3D<float>(texSDF, tc[0] - 1, tc[1], tc[2]));
+        float ymygrad = (tex3D<float>(texSDF, tc[0], tc[1] + 1, tc[2]) - tex3D<float>(texSDF, tc[0], tc[1] - 1, tc[2]));
+        float zmygrad = (tex3D<float>(texSDF, tc[0], tc[1], tc[2] + 1) - tex3D<float>(texSDF, tc[0], tc[1], tc[2] - 1));
 
         float mygradmag = sqrt(xmygrad * xmygrad + ymygrad * ymygrad + zmygrad * zmygrad);
 
@@ -203,7 +204,7 @@ namespace SolidWallsKernel
 
 
 
-    __global__ void fill_keys(const Particle * const particles, const int n, int * const key)
+    __global__ void fill_keys(cudaTextureObject_t texSDF, const Particle * const particles, const int n, int * const key)
     {
         assert(blockDim.x * gridDim.x >= n);
 
@@ -214,7 +215,7 @@ namespace SolidWallsKernel
 
         const Particle p = particles[pid];
 
-        const float mysdf = sdf(p.x[0], p.x[1], p.x[2]);
+        const float mysdf = sdf(texSDF, p.x[0], p.x[1], p.x[2]);
         key[pid] = (int)(mysdf >= 0) + (int)(mysdf > 2);
     }
 
@@ -232,7 +233,7 @@ namespace SolidWallsKernel
         dst[pid] = make_float4(p.x[0], p.x[1], p.x[2], 0);
     }
 
-    __device__ void handle_collision(const float currsdf, float& x, float& y, float& z, float& u, float& v, float& w, const int rank, const float dt)
+    __device__ void handle_collision(cudaTextureObject_t texSDF, const float currsdf, float& x, float& y, float& z, float& u, float& v, float& w, const int rank, const float dt)
     {
         assert(currsdf >= 0);
 
@@ -240,15 +241,15 @@ namespace SolidWallsKernel
         const float yold = y - dt * v;
         const float zold = z - dt * w;
 
-        if (sdf(xold, yold, zold) >= 0)
+        if (sdf(texSDF, xold, yold, zold) >= 0)
         {
             //this is the worst case - it means that old position was bad already
             //we need to search and rescue the particle
 
             cuda_printf("Warning rank %d sdf: %f (%.4f %.4f %.4f), from: sdf %f (%.4f %.4f %.4f)...   ",
-                    rank, currsdf, x, y, z, sdf(xold, yold, zold), xold, yold, zold);
+                    rank, currsdf, x, y, z, sdf(texSDF, xold, yold, zold), xold, yold, zold);
 
-            const float3 mygrad = grad_sdf(x, y, z);
+            const float3 mygrad = grad_sdf(texSDF, x, y, z);
             const float mysdf = currsdf;
 
             x -= mysdf * mygrad.x;
@@ -257,7 +258,7 @@ namespace SolidWallsKernel
 
             for(int l = 8; l >= 1; --l)
             {
-                if (sdf(x, y, z) < 0)
+                if (sdf(texSDF, x, y, z) < 0)
                 {
                     u  = -u;
                     v  = -v;
@@ -277,8 +278,8 @@ namespace SolidWallsKernel
 
             cuda_printf("RANK %d bounce collision failed OLD: %f %f %f, sdf %e \nNEW: %f %f %f sdf %e, gradient %f %f %f\n",
                     rank,
-                    xold, yold, zold, sdf(xold, yold, zold),
-                    x, y, z, sdf(x, y, z), mygrad.x, mygrad.y, mygrad.z);
+                    xold, yold, zold, sdf(texSDF, xold, yold, zold),
+                    x, y, z, sdf(texSDF, x, y, z), mygrad.x, mygrad.y, mygrad.z);
 
             return;
         }
@@ -287,7 +288,7 @@ namespace SolidWallsKernel
         float subdt = dt;
 
         {
-            const float3 mygrad = ugrad_sdf(x, y, z);
+            const float3 mygrad = ugrad_sdf(texSDF, x, y, z);
             const float DphiDt = max(1e-4f, mygrad.x * u + mygrad.y * v + mygrad.z * w);
 
             assert(DphiDt > 0);
@@ -298,12 +299,12 @@ namespace SolidWallsKernel
 #if 1
         {
             const float3 xstar = make_float3(x + subdt * u, y + subdt * v, z + subdt * w);
-            const float3 mygrad = ugrad_sdf(xstar.x, xstar.y, xstar.z);
+            const float3 mygrad = ugrad_sdf(texSDF, xstar.x, xstar.y, xstar.z);
             const float DphiDt = max(1e-4f, mygrad.x * u + mygrad.y * v + mygrad.z * w);
 
             assert(DphiDt > 0);
 
-            subdt = min(dt, max(0.f, subdt - sdf(xstar.x, xstar.y, xstar.z) / DphiDt * 1.02f));
+            subdt = min(dt, max(0.f, subdt - sdf(texSDF, xstar.x, xstar.y, xstar.z) / DphiDt * 1.02f));
         }
 #endif
         const float lambda = 2 * subdt - dt;
@@ -316,20 +317,20 @@ namespace SolidWallsKernel
         v  = -v;
         w  = -w;
 
-        if (sdf(x, y, z) >= 0)
+        if (sdf(texSDF, x, y, z) >= 0)
         {
             x = xold;
             y = yold;
             z = zold;
 
-            assert(sdf(x, y, z) < 0);
+            assert(sdf(texSDF, x, y, z) < 0);
         }
 
         return;
     }
 
     __global__ __launch_bounds__(32 * 4, 12)
-    void bounce(float2 * const particles, const int nparticles, const int rank, const float dt)
+    void bounce(cudaTextureObject_t texSDF, float2 * const particles, const int nparticles, const int rank, const float dt)
     {
         assert(blockDim.x * gridDim.x >= nparticles);
 
@@ -357,17 +358,17 @@ namespace SolidWallsKernel
 
         if (pid < nparticles)
         {
-            const float mycheapsdf = cheap_sdf(data0.x, data0.y, data1.x);
+            const float mycheapsdf = cheap_sdf(texSDF, data0.x, data0.y, data1.x);
 
             if (mycheapsdf >= -1.7320f * ((float)XSIZE_WALLCELLS / (float)XTEXTURESIZE))
             {
-                const float currsdf = sdf(data0.x, data0.y, data1.x);
+                const float currsdf = sdf(texSDF, data0.x, data0.y, data1.x);
 
                 float2 data2 = particles[pid * 3 + 2];
 
                 if (currsdf >= 0)
                 {
-                    handle_collision(currsdf, data0.x, data0.y, data1.x, data1.y, data2.x, data2.y, rank, dt);
+                    handle_collision(texSDF, currsdf, data0.x, data0.y, data1.x, data1.y, data2.x, data2.y, rank, dt);
 
                     particles[3 * pid] = data0;
                     particles[3 * pid + 1] = data1;
@@ -377,7 +378,7 @@ namespace SolidWallsKernel
         }
     }
 
-    __global__ __launch_bounds__(128, 16) void interactions_3tpp(const float2 * const particles, const int np, const int nsolid,
+    __global__ __launch_bounds__(128, 16) void interactions_3tpp(cudaTextureObject_t texSDF, cudaTextureObject_t texWallParticles, cudaTextureObject_t texWallCellStart, const float2 * const particles, const int np, const int nsolid,
             float * const acc, const float seed, const float sigmaf)
     {
         assert(blockDim.x * gridDim.x >= np * 3);
@@ -394,7 +395,7 @@ namespace SolidWallsKernel
 
         const float interacting_threshold = -1 - 1.7320f * ((float)XSIZE_WALLCELLS / (float)XTEXTURESIZE);
 
-        if (cheap_sdf(dst0.x, dst0.y, dst1.x) <= interacting_threshold)
+        if (cheap_sdf(texSDF, dst0.x, dst0.y, dst1.x) <= interacting_threshold)
             return;
 
         const float2 dst2 = particles[3 * pid + 2];
@@ -435,17 +436,17 @@ namespace SolidWallsKernel
 
             const int cid0 = xbase - 1 + XCELLS * (ybase - 1 + YCELLS * (zbase - 1 + zplane));
 
-            spidbase = tex1Dfetch(texWallCellStart, cid0);
-            int count0 = tex1Dfetch(texWallCellStart, cid0 + 3) - spidbase;
+            spidbase = tex1Dfetch<int>(texWallCellStart, cid0);
+            int count0 = tex1Dfetch<int>(texWallCellStart, cid0 + 3) - spidbase;
 
             const int cid1 = cid0 + XCELLS;
-            deltaspid1 = tex1Dfetch(texWallCellStart, cid1);
-            const int count1 = tex1Dfetch(texWallCellStart, cid1 + 3) - deltaspid1;
+            deltaspid1 = tex1Dfetch<int>(texWallCellStart, cid1);
+            const int count1 = tex1Dfetch<int>(texWallCellStart, cid1 + 3) - deltaspid1;
 
             const int cid2 = cid0 + XCELLS * 2;
-            deltaspid2 = tex1Dfetch(texWallCellStart, cid2);
+            deltaspid2 = tex1Dfetch<int>(texWallCellStart, cid2);
             assert(cid2 + 3 <= NCELLS);
-            const int count2 = cid2 + 3 == NCELLS ? nsolid : tex1Dfetch(texWallCellStart, cid2 + 3) - deltaspid2;
+            const int count2 = cid2 + 3 == NCELLS ? nsolid : tex1Dfetch<int>(texWallCellStart, cid2 + 3) - deltaspid2;
 
             scan1 = count0;
             scan2 = count0 + count1;
@@ -466,7 +467,7 @@ namespace SolidWallsKernel
 
             assert(spid >= 0 && spid < nsolid);
 
-            const float4 stmp0 = tex1Dfetch(texWallParticles, spid);
+            const float4 stmp0 = tex1Dfetch<float4>(texWallParticles, spid);
 
             const float xq = stmp0.x;
             const float yq = stmp0.y;
@@ -934,16 +935,32 @@ ComputeWall::ComputeWall(Globals* globals, MPI_Comm cartcomm, Particle* const p,
     CUDA_CHECK(cudaMemcpy3D(&copyParams));
     delete [] field;
 
-    SolidWallsKernel::setup();
+    //SolidWallsKernel::setup();
 
-    CUDA_CHECK(cudaBindTextureToArray(SolidWallsKernel::texSDF, arrSDF, fmt));
+    cudaResourceDesc resDesc;
+    memset(&resDesc, 0, sizeof(resDesc));
+    resDesc.resType = cudaResourceTypeArray;
+    resDesc.res.array.array = arrSDF;
+    cudaTextureDesc texDesc;
+    memset(&texDesc, 0, sizeof(texDesc));
+    texDesc.filterMode = cudaFilterModePoint;
+    texDesc.mipmapFilterMode = cudaFilterModePoint;
+    texDesc.normalizedCoords = 0;
+    texDesc.addressMode[0] = cudaAddressModeWrap;
+    texDesc.addressMode[1] = cudaAddressModeWrap;
+    texDesc.addressMode[2] = cudaAddressModeWrap;
+
+    CUDA_CHECK(cudaCreateTextureObject(&texSDF,
+                                       &resDesc, &texDesc, NULL));
+
+    //CUDA_CHECK(cudaBindTextureToArray(SolidWallsKernel::texSDF, arrSDF, fmt));
 
     if (myrank == 0)
         printf("carving out wall particles...\n");
 
     thrust::device_vector<int> keys(n);
 
-    SolidWallsKernel::fill_keys<<< (n + 127) / 128, 128 >>>(p, n, thrust::raw_pointer_cast(&keys[0]));
+    SolidWallsKernel::fill_keys<<< (n + 127) / 128, 128 >>>(texSDF, p, n, thrust::raw_pointer_cast(&keys[0]));
     CUDA_CHECK(cudaPeekAtLastError());
 
     thrust::sort_by_key(keys.begin(), keys.end(), thrust::device_ptr<Particle>(p));
@@ -1096,7 +1113,7 @@ void ComputeWall::bounce(Particle * const p, const int n, cudaStream_t stream)
     NVTX_RANGE("WALL/bounce", NVTX_C3)
 
 	        if (n > 0)
-	            SolidWallsKernel::bounce<<< (n + 127) / 128, 128, 0, stream>>>((float2 *)p, n, myrank, dt);
+	            SolidWallsKernel::bounce<<< (n + 127) / 128, 128, 0, stream>>>(texSDF, (float2 *)p, n, myrank, dt);
 
     CUDA_CHECK(cudaPeekAtLastError());
 }
@@ -1109,25 +1126,78 @@ void ComputeWall::interactions(const Particle * const p, const int n, Accelerati
 
     if (n > 0 && solid_size > 0)
     {
-        size_t textureoffset;
+        {
+            cudaResourceDesc resDesc;
+            memset(&resDesc, 0, sizeof(resDesc));
+            resDesc.resType = cudaResourceTypeLinear;
+            resDesc.res.linear.devPtr = (void*) solid4;
+            resDesc.res.linear.desc = cudaCreateChannelDesc<float4>();
+            resDesc.res.linear.sizeInBytes = sizeof(float4) * solid_size;
+            cudaTextureDesc texDesc;
+            memset(&texDesc, 0, sizeof(texDesc));
+            texDesc.filterMode = cudaFilterModePoint;
+            texDesc.mipmapFilterMode = cudaFilterModePoint;
+            texDesc.normalizedCoords = 0;
+
+            CUDA_CHECK(cudaCreateTextureObject(&texWallParticles,
+                                               &resDesc, &texDesc, NULL));
+        }
+        /*size_t textureoffset;
         CUDA_CHECK(cudaBindTexture(&textureoffset, &SolidWallsKernel::texWallParticles, solid4,
                 &SolidWallsKernel::texWallParticles.channelDesc, sizeof(float4) * solid_size));
-        assert(textureoffset == 0);
+        assert(textureoffset == 0);*/
 
-        CUDA_CHECK(cudaBindTexture(&textureoffset, &SolidWallsKernel::texWallCellStart, cells.start,
+        {
+            cudaResourceDesc resDesc;
+            memset(&resDesc, 0, sizeof(resDesc));
+            resDesc.resType = cudaResourceTypeLinear;
+            resDesc.res.linear.devPtr = (void*) cells.start;
+            resDesc.res.linear.desc = cudaCreateChannelDesc<int>();
+            resDesc.res.linear.sizeInBytes = sizeof(int) * cells.ncells;
+            cudaTextureDesc texDesc;
+            memset(&texDesc, 0, sizeof(texDesc));
+            texDesc.filterMode = cudaFilterModePoint;
+            texDesc.mipmapFilterMode = cudaFilterModePoint;
+            texDesc.normalizedCoords = 0;
+
+            CUDA_CHECK(cudaCreateTextureObject(&texWallCellStart,
+                                               &resDesc, &texDesc, NULL));
+        }
+        /*CUDA_CHECK(cudaBindTexture(&textureoffset, &SolidWallsKernel::texWallCellStart, cells.start,
                 &SolidWallsKernel::texWallCellStart.channelDesc, sizeof(int) * cells.ncells));
-        assert(textureoffset == 0);
+        assert(textureoffset == 0);*/
 
-        CUDA_CHECK(cudaBindTexture(&textureoffset, &SolidWallsKernel::texWallCellCount, cells.count,
+        /* currently unused
+        {
+            cudaResourceDesc resDesc;
+            memset(&resDesc, 0, sizeof(resDesc));
+            resDesc.resType = cudaResourceTypeLinear;
+            resDesc.res.linear.devPtr = (void*) cells.count;
+            resDesc.res.linear.desc = cudaCreateChannelDesc<int>();
+            resDesc.res.linear.sizeInBytes = sizeof(int) * cells.ncells;
+            cudaTextureDesc texDesc;
+            memset(&texDesc, 0, sizeof(texDesc));
+            texDesc.filterMode = cudaFilterModePoint;
+            texDesc.mipmapFilterMode = cudaFilterModePoint;
+            texDesc.normalizedCoords = 0;
+
+            CUDA_CHECK(cudaCreateTextureObject(&texWallCellCount,
+                                               &resDesc, &texDesc, NULL));
+        }*/
+        /*CUDA_CHECK(cudaBindTexture(&textureoffset, &SolidWallsKernel::texWallCellCount, cells.count,
                 &SolidWallsKernel::texWallCellCount.channelDesc, sizeof(int) * cells.ncells));
-        assert(textureoffset == 0);
+        assert(textureoffset == 0);*/
 
         SolidWallsKernel::interactions_3tpp<<< (3 * n + 127) / 128, 128, 0, stream>>>
-                ((float2 *)p, n, solid_size, (float *)acc, trunk.get_float(), sigmaf);
+                (texSDF, texWallParticles, texWallCellStart, (float2 *)p, n, solid_size, (float *)acc, trunk.get_float(), sigmaf);
 
-        CUDA_CHECK(cudaUnbindTexture(SolidWallsKernel::texWallParticles));
+        CUDA_CHECK(cudaDestroyTextureObject(texWallParticles));
+        CUDA_CHECK(cudaDestroyTextureObject(texWallCellStart));
+        /* currently unused
+        CUDA_CHECK(cudaDestroyTextureObject(texWallCellCount));*/
+        /*CUDA_CHECK(cudaUnbindTexture(SolidWallsKernel::texWallParticles));
         CUDA_CHECK(cudaUnbindTexture(SolidWallsKernel::texWallCellStart));
-        CUDA_CHECK(cudaUnbindTexture(SolidWallsKernel::texWallCellCount));
+        CUDA_CHECK(cudaUnbindTexture(SolidWallsKernel::texWallCellCount));*/
     }
 
     CUDA_CHECK(cudaPeekAtLastError());
@@ -1135,6 +1205,7 @@ void ComputeWall::interactions(const Particle * const p, const int n, Accelerati
 
 ComputeWall::~ComputeWall()
 {
-    CUDA_CHECK(cudaUnbindTexture(SolidWallsKernel::texSDF));
+    CUDA_CHECK(cudaDestroyTextureObject(texSDF));
+    //CUDA_CHECK(cudaUnbindTexture(SolidWallsKernel::texSDF));
     CUDA_CHECK(cudaFreeArray(arrSDF));
 }

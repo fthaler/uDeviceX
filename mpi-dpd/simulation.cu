@@ -224,7 +224,8 @@ void Simulation::_remove_bodies_from_wall(CollectionRBC * coll)
 
     SimpleDeviceBuffer<int> marks(coll->pcount());
 
-    SolidWallsKernel::fill_keys<<< (coll->pcount() + 127) / 128, 128 >>>(coll->data(), coll->pcount(), marks.data);
+    assert(wall);
+    SolidWallsKernel::fill_keys<<< (coll->pcount() + 127) / 128, 128 >>>(wall->texSDF, coll->data(), coll->pcount(), marks.data);
 
     vector<int> tmp(marks.size);
     CUDA_CHECK(cudaMemcpy(tmp.data(), marks.data, sizeof(int) * marks.size, cudaMemcpyDeviceToHost));

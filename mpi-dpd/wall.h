@@ -20,7 +20,7 @@
 
 namespace SolidWallsKernel
 {
-    __global__ void fill_keys(const Particle * const particles, const int n, int * const key);
+    __global__ void fill_keys(cudaTextureObject_t texSDF, const Particle * const particles, const int n, int * const key);
 }
 
 class ComputeWall
@@ -41,6 +41,12 @@ class ComputeWall
     CellLists cells;
 
 public:
+    // global texture references moved from wall.cu
+    cudaTextureObject_t texSDF;
+    cudaTextureObject_t texWallParticles;
+    cudaTextureObject_t texWallCellStart;
+    /* currently unused
+    texWallCellCount; */
 
     ComputeWall(Globals* globals, MPI_Comm cartcomm, Particle* const p, const int n, int& nsurvived, ExpectedMessageSizes& new_sizes, const bool verbose);
 
