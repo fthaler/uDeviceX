@@ -26,19 +26,17 @@ using namespace std;
 
 namespace RedistributeParticlesKernels
 {
+    /* moved to redistribute-particles.h as class members for AMPI
     __constant__ RedistributeParticles::PackBuffer pack_buffers[27];
 
     __constant__ RedistributeParticles::UnpackBuffer unpack_buffers[27];
 
-    // TODO: remove device variables for AMPI compatibility
     __device__ int pack_count[27], pack_start_padded[28];
 
     __constant__ int unpack_start[28], unpack_start_padded[28];
 
-    // TODO: remove device variables for AMPI compatibility
     __device__ bool failed;
 
-    /* moved to redistribute-particles.h as class members for AMPI
     int ntexparticles = 0;
     float2 * texparticledata;
     texture<float, cudaTextureType1D> texAllParticles;
@@ -54,16 +52,16 @@ namespace RedistributeParticlesKernels
 #define _ACCESS(x) (*(x))
 #endif
 
-    __global__ void setup()
+    __global__ void setup(int* pack_count, bool* failed)
     {
 	if (threadIdx.x == 0)
-	    failed = false;
+	    *failed = false;
 
 	if (threadIdx.x < 27)
 	    pack_count[threadIdx.x] = 0;
     }
 
-    __global__ void scatter_halo_indices_pack(cudaTextureObject_t texAllParticles, const int np)
+    __global__ void scatter_halo_indices_pack(cudaTextureObject_t texAllParticles, RedistributeParticles::PackBuffer* pack_buffers, int* pack_count, const int np)
     {
 	const int pid = threadIdx.x + blockDim.x * blockIdx.x;
 
@@ -92,7 +90,7 @@ namespace RedistributeParticlesKernels
 	}
     }
 
-    __global__ void tiny_scan(const int nparticles, const int bulkcapacity, int * const packsizes, bool * const failureflag)
+    __global__ void tiny_scan(const RedistributeParticles::PackBuffer* pack_buffers, const int* pack_count, int* pack_start_padded, bool* failed, const int nparticles, const int bulkcapacity, int * const packsizes, bool * const failureflag)
     {
 	assert(blockDim.x > 27 && gridDim.x == 1);
 
@@ -108,7 +106,7 @@ namespace RedistributeParticlesKernels
 
 	    if (mycount > pack_buffers[tid].capacity)
 	    {
-		failed = true;
+		*failed = true;
 		*failureflag = true;
 	    }
 	}
@@ -130,14 +128,14 @@ namespace RedistributeParticlesKernels
 
 	    if (nbulk > bulkcapacity)
 	    {
-		failed = true;
+		*failed = true;
 		*failureflag = true;
 	    }
 	}
     }
 
 #ifndef NDEBUG
-    __global__ void check_scan()
+    __global__ void check_scan(const int* pack_start_padded)
     {
 	assert(blockDim.x == 1 && gridDim.x == 1);
 
@@ -146,12 +144,12 @@ namespace RedistributeParticlesKernels
     }
 #endif
 
-    __global__ void pack(cudaTextureObject_t texAllParticlesFloat2, const int nparticles, const int nfloat2s)
+    __global__ void pack(cudaTextureObject_t texAllParticlesFloat2, RedistributeParticles::PackBuffer* pack_buffers, const int* pack_start_padded, const bool* failed, const int nparticles, const int nfloat2s)
     {
 
 	assert(blockDim.x * gridDim.x >= nfloat2s);
 
-	if (failed)
+	if (*failed)
 	    return;
 
 	const int gid = threadIdx.x + blockDim.x * blockIdx.x;
@@ -195,7 +193,7 @@ namespace RedistributeParticlesKernels
 	pack_buffers[idpack].buffer[d] = tex1Dfetch<float2>(texAllParticlesFloat2, c + 3 * pid);
     }
 
-    __global__ void subindex_remote(const uint nparticles_padded,
+    __global__ void subindex_remote(const RedistributeParticles::UnpackBuffer* unpack_buffers, const int* unpack_start, const int* unpack_start_padded, const uint nparticles_padded,
 				    const uint nparticles, int * const partials, float2 * const dstbuf, uchar4 * const subindices)
     {
 	assert(blockDim.x * gridDim.x >= nparticles_padded && blockDim.x == 128);
@@ -449,6 +447,14 @@ subindices_remote(1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSI
 {
     safety_factor = getenv("RDP_COMM_FACTOR") ? atof(getenv("RDP_COMM_FACTOR")) : 1.2;
 
+    CUDA_CHECK(cudaMalloc(&pack_buffers, sizeof(PackBuffer) * 27));
+    CUDA_CHECK(cudaMalloc(&unpack_buffers, sizeof(UnpackBuffer) * 27));
+    CUDA_CHECK(cudaMalloc(&pack_count, sizeof(int) * 27));
+    CUDA_CHECK(cudaMalloc(&pack_start_padded, sizeof(int) * 28));
+    CUDA_CHECK(cudaMalloc(&unpack_start, sizeof(int) * 28));
+    CUDA_CHECK(cudaMalloc(&unpack_start_padded, sizeof(int) * 28));
+    CUDA_CHECK(cudaMalloc(&failed, sizeof(bool)));
+
 #ifdef AMPI
     // AMPI's communicator duplication is broken, this is the workaround
     cartcomm = _cartcomm;
@@ -622,7 +628,7 @@ void RedistributeParticles::pack(const Particle * const particles, const int npa
     if (firstcall)
 	_post_recv();
 
-    size_t textureoffset;
+    //size_t textureoffset;
     if (nparticles) {
         if (texAllParticles != 0)
             CUDA_CHECK(cudaDestroyTextureObject(texAllParticles));
@@ -674,25 +680,26 @@ void RedistributeParticles::pack(const Particle * const particles, const int npa
 
 pack_attempt:
 
-    CUDA_CHECK(cudaMemcpyToSymbolAsync(RedistributeParticlesKernels::pack_buffers, packbuffers,
-					   sizeof(PackBuffer) * 27, 0, cudaMemcpyHostToDevice, mystream));
+    CUDA_CHECK(cudaMemcpyAsync(pack_buffers, packbuffers, sizeof(PackBuffer) * 27, cudaMemcpyHostToDevice, mystream));
+    /*CUDA_CHECK(cudaMemcpyToSymbolAsync(RedistributeParticlesKernels::pack_buffers, packbuffers,
+					   sizeof(PackBuffer) * 27, 0, cudaMemcpyHostToDevice, mystream));*/
 
     *failure.data = false;
-    RedistributeParticlesKernels::setup<<<1, 32, 0, mystream>>>();
+    RedistributeParticlesKernels::setup<<<1, 32, 0, mystream>>>(pack_count, failed);
 
     if (nparticles)
-	RedistributeParticlesKernels::scatter_halo_indices_pack<<< (nparticles + 127) / 128, 128, 0, mystream>>>(texAllParticles, nparticles);
+	RedistributeParticlesKernels::scatter_halo_indices_pack<<< (nparticles + 127) / 128, 128, 0, mystream>>>(texAllParticles, pack_buffers, pack_count, nparticles);
 
-    RedistributeParticlesKernels::tiny_scan<<<1, 32, 0, mystream>>>(nparticles, packbuffers[0].capacity, packsizes.devptr, failure.devptr);
+    RedistributeParticlesKernels::tiny_scan<<<1, 32, 0, mystream>>>(pack_buffers, pack_count, pack_start_padded, failed, nparticles, packbuffers[0].capacity, packsizes.devptr, failure.devptr);
 
     CUDA_CHECK(cudaEventRecord(evsizes, mystream));
 
 #ifndef NDEBUG
-    RedistributeParticlesKernels::check_scan<<<1, 1, 0, mystream>>>();
+    RedistributeParticlesKernels::check_scan<<<1, 1, 0, mystream>>>(pack_start_padded);
 #endif
 
     if (nparticles)
-	RedistributeParticlesKernels::pack<<< (3 * nparticles + 127) / 128, 128, 0, mystream>>> (texAllParticlesFloat2, nparticles, nparticles * 3);
+	RedistributeParticlesKernels::pack<<< (3 * nparticles + 127) / 128, 128, 0, mystream>>> (texAllParticlesFloat2, pack_buffers, pack_start_padded, failed, nparticles, nparticles * 3);
 
     CUDA_CHECK(cudaEventRecord(evpacking, mystream));
 
@@ -846,11 +853,13 @@ int RedistributeParticles::recv_count(cudaStream_t mystream, float& host_idle_ti
 
 	nhalo_padded = ustart_padded[27];
 
-	CUDA_CHECK(cudaMemcpyToSymbolAsync(RedistributeParticlesKernels::unpack_start, ustart,
-					   sizeof(int) * 28, 0, cudaMemcpyHostToDevice, mystream));
+    CUDA_CHECK(cudaMemcpyAsync(unpack_start, ustart, sizeof(int) * 28, cudaMemcpyHostToDevice, mystream));
+	/*CUDA_CHECK(cudaMemcpyToSymbolAsync(RedistributeParticlesKernels::unpack_start, ustart,
+					   sizeof(int) * 28, 0, cudaMemcpyHostToDevice, mystream));*/
 
-	CUDA_CHECK(cudaMemcpyToSymbolAsync(RedistributeParticlesKernels::unpack_start_padded, ustart_padded,
-					   sizeof(int) * 28, 0, cudaMemcpyHostToDevice, mystream));
+    CUDA_CHECK(cudaMemcpyAsync(unpack_start_padded, ustart_padded, sizeof(int) * 28, cudaMemcpyHostToDevice, mystream));
+	/*CUDA_CHECK(cudaMemcpyToSymbolAsync(RedistributeParticlesKernels::unpack_start_padded, ustart_padded,
+					   sizeof(int) * 28, 0, cudaMemcpyHostToDevice, mystream));*/
     }
 
     {
@@ -877,8 +886,11 @@ void RedistributeParticles::recv_unpack(Particle * const particles, float4 * con
     _adjust_recv_buffers(recv_sizes);
 
     if (haschanged)
-	CUDA_CHECK(cudaMemcpyToSymbolAsync(RedistributeParticlesKernels::unpack_buffers, unpackbuffers,
-					       sizeof(UnpackBuffer) * 27, 0, cudaMemcpyHostToDevice, mystream));
+    {
+        CUDA_CHECK(cudaMemcpyAsync(unpack_buffers, unpackbuffers, sizeof(UnpackBuffer) * 27, cudaMemcpyHostToDevice, mystream));
+	/*CUDA_CHECK(cudaMemcpyToSymbolAsync(RedistributeParticlesKernels::unpack_buffers, unpackbuffers,
+					       sizeof(UnpackBuffer) * 27, 0, cudaMemcpyHostToDevice, mystream));*/
+    }
 
     for(int i = 1; i < 27; ++i)
 	if (default_message_sizes[i] && recv_sizes[i] > default_message_sizes[i])
@@ -898,7 +910,7 @@ void RedistributeParticles::recv_unpack(Particle * const particles, float4 * con
 
     if (nhalo)
 	RedistributeParticlesKernels::subindex_remote<<< (nhalo_padded + 127) / 128, 128, 0, mystream >>>
-	    (nhalo_padded, nhalo, cellcounts, (float2 *)remote_particles.data, subindices_remote.data);
+	    (unpack_buffers, unpack_start, unpack_start_padded, nhalo_padded, nhalo, cellcounts, (float2 *)remote_particles.data, subindices_remote.data);
 
     if (compressed_cellcounts.size)
     compress_counts<<< (compressed_cellcounts.size + 127) / 128, 128, 0, mystream >>>
@@ -990,4 +1002,12 @@ RedistributeParticles::~RedistributeParticles()
 	else
 	    CUDA_CHECK(cudaFree(packbuffers[i].buffer));
     }
+
+    CUDA_CHECK(cudaFree(pack_buffers));
+    CUDA_CHECK(cudaFree(unpack_buffers));
+    CUDA_CHECK(cudaFree(pack_count));
+    CUDA_CHECK(cudaFree(pack_start_padded));
+    CUDA_CHECK(cudaFree(unpack_start));
+    CUDA_CHECK(cudaFree(unpack_start_padded));
+    CUDA_CHECK(cudaFree(failed));
 }

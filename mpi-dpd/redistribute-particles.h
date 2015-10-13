@@ -61,6 +61,11 @@ private:
     int ntexparticles;
     float2* texparticledata;
     cudaTextureObject_t texAllParticles, texAllParticlesFloat2;
+    PackBuffer* pack_buffers;
+    UnpackBuffer* unpack_buffers;
+    int* pack_count, *pack_start_padded;
+    int* unpack_start, *unpack_start_padded;
+    bool* failed;
 
     MPI_Comm cartcomm;
 
