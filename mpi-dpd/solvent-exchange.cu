@@ -16,70 +16,19 @@
 
 #include "solvent-exchange.h"
 
-using namespace std;
-
-SolventExchange::SolventExchange(Globals* globals, MPI_Comm _cartcomm, const int basetag):  globals(globals), basetag(basetag), firstpost(true), nactive(26)
-{
-    safety_factor = getenv("HEX_COMM_FACTOR") ? atof(getenv("HEX_COMM_FACTOR")) : 1.2;
-
-    assert(XSIZE_SUBDOMAIN % 2 == 0 && YSIZE_SUBDOMAIN % 2 == 0 && ZSIZE_SUBDOMAIN % 2 == 0);
-    assert(XSIZE_SUBDOMAIN >= 2 && YSIZE_SUBDOMAIN >= 2 && ZSIZE_SUBDOMAIN >= 2);
-
-#ifdef AMPI
-    // AMPI's communicator duplication is broken, this is the workaround
-    cartcomm = _cartcomm;
-#else
-    MPI_CHECK( MPI_Comm_dup(_cartcomm, &cartcomm));
-#endif
-
-    MPI_CHECK( MPI_Comm_rank(cartcomm, &myrank));
-    MPI_CHECK( MPI_Comm_size(cartcomm, &nranks));
-
-    MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
-
-    for(int i = 0; i < 26; ++i)
-    {
-	int d[3] = { (i + 2) % 3 - 1, (i / 3 + 2) % 3 - 1, (i / 9 + 2) % 3 - 1 };
-
-	recv_tags[i] = (2 - d[0]) % 3 + 3 * ((2 - d[1]) % 3 + 3 * ((2 - d[2]) % 3));
-
-	int coordsneighbor[3];
-	for(int c = 0; c < 3; ++c)
-	    coordsneighbor[c] = coords[c] + d[c];
-
-	MPI_CHECK( MPI_Cart_rank(cartcomm, coordsneighbor, dstranks + i) );
-
-	halosize[i].x = d[0] != 0 ? 1 : XSIZE_SUBDOMAIN;
-	halosize[i].y = d[1] != 0 ? 1 : YSIZE_SUBDOMAIN;
-	halosize[i].z = d[2] != 0 ? 1 : ZSIZE_SUBDOMAIN;
-
-	const int nhalocells = halosize[i].x * halosize[i].y * halosize[i].z;
-
-	int estimate = numberdensity * safety_factor * nhalocells;
-	estimate = 32 * ((estimate + 31) / 32);
-
-	recvhalos[i].setup(estimate, nhalocells);
-	sendhalos[i].setup(estimate, nhalocells);
-    }
-
-    CUDA_CHECK(cudaHostAlloc((void **)&required_send_bag_size_host, sizeof(int) * 26, cudaHostAllocMapped));
-    CUDA_CHECK(cudaHostGetDevicePointer(&required_send_bag_size, required_send_bag_size_host, 0));
-
-    CUDA_CHECK(cudaEventCreateWithFlags(&evfillall, cudaEventDisableTiming));
-    CUDA_CHECK(cudaEventCreateWithFlags(&evdownloaded, cudaEventDisableTiming | cudaEventBlockingSync));
-}
-
 namespace PackingHalo
 {
+    struct CellPackSOA { int * start, * count, * scan, size; bool enabled; };
+
+    /* moved to solvent-exchange.h for use with AMPI
     int ncells;
 
     __constant__ int cellpackstarts[27];
 
-    struct CellPackSOA { int * start, * count, * scan, size; bool enabled; };
-
     __constant__ CellPackSOA cellpacks[26];
+    */
 
-    __global__ void count_all(const int * const cellsstart, const int * const cellscount, const int ntotalcells)
+    __global__ void count_all(const int* cellpackstarts, const CellPackSOA* cellpacks, const int * const cellsstart, const int * const cellscount, const int ntotalcells)
     {
 	assert(blockDim.x * gridDim.x >= ntotalcells);
 
@@ -150,7 +99,7 @@ namespace PackingHalo
     __constant__ int * srccells[26 * 2], * dstcells[26 * 2];
 
     template<int slot>
-    __global__ void copycells(const int n)
+    __global__ void copycells(const int* cellpackstarts, const int n)
     {
 	assert(blockDim.x * gridDim.x >= n);
 
@@ -194,7 +143,7 @@ namespace PackingHalo
 #endif
 
     template<int NWARPS>
-    __global__ void scan_diego()
+    __global__ void scan_diego(const CellPackSOA* cellpacks)
     {
 	assert(gridDim.x == 26 && blockDim.x == 32 * NWARPS);
 
@@ -277,7 +226,7 @@ namespace PackingHalo
 
     __constant__ SendBagInfo baginfos[26];
 
-    __global__ void fill_all(const Particle * const particles, const int np, int * const required_bag_size)
+    __global__ void fill_all(const int* cellpackstarts, const Particle * const particles, const int np, int * const required_bag_size)
     {
 	assert(sizeof(Particle) == 6 * sizeof(float));
 	assert(blockDim.x == warpSize);
@@ -369,6 +318,62 @@ namespace PackingHalo
 #endif
 }
 
+using namespace std;
+
+SolventExchange::SolventExchange(Globals* globals, MPI_Comm _cartcomm, const int basetag):  GlobalsInjector(globals), ncells(0), basetag(basetag), firstpost(true), nactive(26)
+{
+    CUDA_CHECK(cudaMalloc(&cellpackstarts, sizeof(int) * 27));
+    CUDA_CHECK(cudaMalloc(&cellpacks, sizeof(PackingHalo::CellPackSOA) * 26));
+
+    safety_factor = getenv("HEX_COMM_FACTOR") ? atof(getenv("HEX_COMM_FACTOR")) : 1.2;
+
+    assert(XSIZE_SUBDOMAIN % 2 == 0 && YSIZE_SUBDOMAIN % 2 == 0 && ZSIZE_SUBDOMAIN % 2 == 0);
+    assert(XSIZE_SUBDOMAIN >= 2 && YSIZE_SUBDOMAIN >= 2 && ZSIZE_SUBDOMAIN >= 2);
+
+#ifdef AMPI
+    // AMPI's communicator duplication is broken, this is the workaround
+    cartcomm = _cartcomm;
+#else
+    MPI_CHECK( MPI_Comm_dup(_cartcomm, &cartcomm));
+#endif
+
+    MPI_CHECK( MPI_Comm_rank(cartcomm, &myrank));
+    MPI_CHECK( MPI_Comm_size(cartcomm, &nranks));
+
+    MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
+
+    for(int i = 0; i < 26; ++i)
+    {
+	int d[3] = { (i + 2) % 3 - 1, (i / 3 + 2) % 3 - 1, (i / 9 + 2) % 3 - 1 };
+
+	recv_tags[i] = (2 - d[0]) % 3 + 3 * ((2 - d[1]) % 3 + 3 * ((2 - d[2]) % 3));
+
+	int coordsneighbor[3];
+	for(int c = 0; c < 3; ++c)
+	    coordsneighbor[c] = coords[c] + d[c];
+
+	MPI_CHECK( MPI_Cart_rank(cartcomm, coordsneighbor, dstranks + i) );
+
+	halosize[i].x = d[0] != 0 ? 1 : XSIZE_SUBDOMAIN;
+	halosize[i].y = d[1] != 0 ? 1 : YSIZE_SUBDOMAIN;
+	halosize[i].z = d[2] != 0 ? 1 : ZSIZE_SUBDOMAIN;
+
+	const int nhalocells = halosize[i].x * halosize[i].y * halosize[i].z;
+
+	int estimate = numberdensity * safety_factor * nhalocells;
+	estimate = 32 * ((estimate + 31) / 32);
+
+	recvhalos[i].setup(estimate, nhalocells);
+	sendhalos[i].setup(estimate, nhalocells);
+    }
+
+    CUDA_CHECK(cudaHostAlloc((void **)&required_send_bag_size_host, sizeof(int) * 26, cudaHostAllocMapped));
+    CUDA_CHECK(cudaHostGetDevicePointer(&required_send_bag_size, required_send_bag_size_host, 0));
+
+    CUDA_CHECK(cudaEventCreateWithFlags(&evfillall, cudaEventDisableTiming));
+    CUDA_CHECK(cudaEventCreateWithFlags(&evdownloaded, cudaEventDisableTiming | cudaEventBlockingSync));
+}
+
 void SolventExchange::_pack_all(const Particle * const p, const int n, const bool update_baginfos, cudaStream_t stream)
 {
     if (update_baginfos)
@@ -389,8 +394,8 @@ void SolventExchange::_pack_all(const Particle * const p, const int n, const boo
 	CUDA_CHECK(cudaMemcpyToSymbolAsync(PackingHalo::baginfos, baginfos, sizeof(baginfos), 0, cudaMemcpyHostToDevice, stream)); // peh: added stream
     }
 
-    if (PackingHalo::ncells)
-    PackingHalo::fill_all<<< (PackingHalo::ncells + 1) / 2, 32, 0, stream>>>(p, n, required_send_bag_size);
+    if (ncells)
+    PackingHalo::fill_all<<< (ncells + 1) / 2, 32, 0, stream>>>(cellpackstarts, p, n, required_send_bag_size);
 
     CUDA_CHECK(cudaEventRecord(evfillall, stream));
 }
@@ -412,10 +417,11 @@ void SolventExchange::pack(const Particle * const p, const int n, const int * co
 	    for(int i = 0, s = 0; i < 26; ++i)
 		cellpackstarts[i + 1] =  (s += sendhalos[i].dcellstarts.size * (sendhalos[i].expected > 0));
 
-	    PackingHalo::ncells = cellpackstarts[26];
+	    ncells = cellpackstarts[26];
 
-	    CUDA_CHECK(cudaMemcpyToSymbol(PackingHalo::cellpackstarts, cellpackstarts,
-					       sizeof(cellpackstarts), 0, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(this->cellpackstarts, cellpackstarts, sizeof(cellpackstarts), cudaMemcpyHostToDevice));
+	    /*CUDA_CHECK(cudaMemcpyToSymbol(PackingHalo::cellpackstarts, cellpackstarts,
+					       sizeof(cellpackstarts), 0, cudaMemcpyHostToDevice));*/
 	}
 
 	{
@@ -429,15 +435,16 @@ void SolventExchange::pack(const Particle * const p, const int n, const int * co
 		cellpacks[i].size = sendhalos[i].dcellstarts.size;
 	    }
 
-	    CUDA_CHECK(cudaMemcpyToSymbol(PackingHalo::cellpacks, cellpacks,
-					       sizeof(cellpacks), 0, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(this->cellpacks, cellpacks, sizeof(cellpacks), cudaMemcpyHostToDevice));
+	    /*CUDA_CHECK(cudaMemcpyToSymbol(PackingHalo::cellpacks, cellpacks,
+					       sizeof(cellpacks), 0, cudaMemcpyHostToDevice));*/
 	}
     }
 
-    if (PackingHalo::ncells)
-    PackingHalo::count_all<<<(PackingHalo::ncells + 127) / 128, 128, 0, stream>>>(cellsstart, cellscount, PackingHalo::ncells);
+    if (ncells)
+    PackingHalo::count_all<<<(ncells + 127) / 128, 128, 0, stream>>>(cellpackstarts, cellpacks, cellsstart, cellscount, ncells);
 
-    PackingHalo::scan_diego< 32 ><<< 26, 32 * 32, 0, stream>>>();
+    PackingHalo::scan_diego< 32 ><<< 26, 32 * 32, 0, stream>>>(cellpacks);
 
     CUDA_CHECK(cudaPeekAtLastError());
 
@@ -482,8 +489,8 @@ void SolventExchange::pack(const Particle * const p, const int n, const int * co
 	}
     }
 
-    if (PackingHalo::ncells)
-    PackingHalo::copycells<0><<< (PackingHalo::ncells + 127) / 128, 128, 0, stream>>>(PackingHalo::ncells);
+    if (ncells)
+    PackingHalo::copycells<0><<< (ncells + 127) / 128, 128, 0, stream>>>(cellpackstarts, ncells);
 
     _pack_all(p, n, firstpost, stream);
     CUDA_CHECK(cudaPeekAtLastError());
@@ -756,4 +763,6 @@ SolventExchange::~SolventExchange()
 
     CUDA_CHECK(cudaEventDestroy(evfillall));
     CUDA_CHECK(cudaEventDestroy(evdownloaded));
+    CUDA_CHECK(cudaFree(cellpackstarts));
+    CUDA_CHECK(cudaFree(cellpacks));
 }

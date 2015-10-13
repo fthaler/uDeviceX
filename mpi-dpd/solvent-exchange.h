@@ -17,10 +17,14 @@
 #include "common.h"
 #include "globals.h"
 
-class SolventExchange
+namespace PackingHalo { struct CellPackSOA; }
+
+class SolventExchange : public GlobalsInjector
 {
-    // global variable pointer for AMPI
-    Globals* globals;
+    // global variables moved from solvent-exchange.cu
+    int ncells;
+    int* cellpackstarts;
+    PackingHalo::CellPackSOA* cellpacks;
 
     MPI_Comm cartcomm;
     MPI_Request sendreq[26 * 2], recvreq[26], sendcellsreq[26], recvcellsreq[26], sendcountreq[26], recvcountreq[26];
