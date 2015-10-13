@@ -23,9 +23,16 @@
 #include "common.h"
 #include "solvent-exchange.h"
 
+namespace BipsBatch { struct BatchInfo; }
+
 //see the vanilla version of this code for details about how this class operates
 class ComputeDPD : public SolventExchange
 {           
+    // globals moved from dpd.cu for use with AMPI
+    unsigned* start;
+    BipsBatch::BatchInfo* batchinfos;
+
+
     Logistic::KISS local_trunk;
     Logistic::KISS interrank_trunks[26];
 
@@ -34,6 +41,7 @@ class ComputeDPD : public SolventExchange
 public:
     
     ComputeDPD(Globals* globals, MPI_Comm cartcomm);
+    virtual ~ComputeDPD();
 
     void remote_interactions(const Particle * const p, const int n, Acceleration * const a, cudaStream_t stream, cudaStream_t uploadstream);
 

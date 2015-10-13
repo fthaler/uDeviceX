@@ -18,76 +18,8 @@
 
 #include "dpd.h"
 
-using namespace std;
-
-ComputeDPD::ComputeDPD(Globals* globals, MPI_Comm cartcomm): SolventExchange(globals, cartcomm, 0), local_trunk(0, 0, 0, 0)
-{
-    int myrank;
-    MPI_CHECK(MPI_Comm_rank(cartcomm, &myrank));
-
-    for(int i = 0; i < 26; ++i)
-    {
-	int d[3] = { (i + 2) % 3 - 1, (i / 3 + 2) % 3 - 1, (i / 9 + 2) % 3 - 1 };
-
-	int coordsneighbor[3];
-	for(int c = 0; c < 3; ++c)
-	    coordsneighbor[c] = (coords[c] + d[c] + dims[c]) % dims[c];
-
-	int indx[3];
-	for(int c = 0; c < 3; ++c)
-	    indx[c] = min(coords[c], coordsneighbor[c]) * dims[c] + max(coords[c], coordsneighbor[c]);
-
-	const int interrank_seed_base = indx[0] + dims[0] * dims[0] * (indx[1] + dims[1] * dims[1] * indx[2]);
-
-	int interrank_seed_offset;
-
-	{
-	    const bool isplus =
-		d[0] + d[1] + d[2] > 0 ||
-		d[0] + d[1] + d[2] == 0 && (
-		    d[0] > 0 || d[0] == 0 && (
-			d[1] > 0 || d[1] == 0 && d[2] > 0
-			)
-		    );
-
-	    const int mysign = 2 * isplus - 1;
-
-	    int v[3] = { 1 + mysign * d[0], 1 + mysign * d[1], 1 + mysign *d[2] };
-
-	    interrank_seed_offset = v[0] + 3 * (v[1] + 3 * v[2]);
-	}
-
-	const int interrank_seed = interrank_seed_base + interrank_seed_offset;
-
-	interrank_trunks[i] = Logistic::KISS(390 + interrank_seed, interrank_seed  + 615, 12309, 23094);
-
-	const int dstrank = dstranks[i];
-
-	if (dstrank != myrank)
-	    interrank_masks[i] = min(dstrank, myrank) == myrank;
-	else
-	{
-	    int alter_ego = (2 - d[0]) % 3 + 3 * ((2 - d[1]) % 3 + 3 * ((2 - d[2]) % 3));
-	    interrank_masks[i] = min(i, alter_ego) == i;
-	}
-    }
-}
-
-void ComputeDPD::local_interactions(const Particle * const xyzuvw, const float4 * const xyzouvwo, const ushort4 * const xyzo_half,
-				    const int n, Acceleration * const a, const int * const cellsstart, const int * const cellscount, cudaStream_t stream)
-{
-    NVTX_RANGE("DPD/local", NVTX_C5);
-
-    if (n > 0)
-	forces_dpd_cuda_nohost((float*)xyzuvw, xyzouvwo, xyzo_half, (float *)a, n,
-			       cellsstart, cellscount,
-			       1, XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN, aij, gammadpd,
-			       sigma, 1. / sqrt(dt), local_trunk.get_float(), stream);
-}
-
 namespace BipsBatch
 {
-    __constant__ unsigned int start[27];
 
     enum HaloType { HALO_BULK = 0, HALO_FACE = 1, HALO_EDGE = 2, HALO_CORNER = 3 } ;
 
@@ -100,10 +32,13 @@ namespace BipsBatch
 	HaloType halotype;
     };
 
+    /* moved to dpd.h as class members for use with AMPI
+    __constant__ unsigned int start[27];
     __constant__ BatchInfo batchinfos[26];
+    */
 
     __global__ void
-    interaction_kernel(const float aij, const float gamma, const float sigmaf,
+    interaction_kernel(const unsigned* start, const BatchInfo* batchinfos, const float aij, const float gamma, const float sigmaf,
 		       const int ndstall, float * const adst, const int sizeadst)
     {
 #if !defined(__CUDA_ARCH__)
@@ -294,7 +229,7 @@ namespace BipsBatch
 
     cudaEvent_t evhalodone;
 
-    void interactions(const float aij, const float gamma, const float sigma, const float invsqrtdt,
+    void interactions(unsigned* start, BatchInfo* batchinfos, const float aij, const float gamma, const float sigma, const float invsqrtdt,
 		      const BatchInfo infos[20], cudaStream_t computestream, cudaStream_t uploadstream, float * const acc, const int n)
     {
 	if (firstcall)
@@ -304,7 +239,8 @@ namespace BipsBatch
 	    firstcall = false;
 	}
 
-	CUDA_CHECK(cudaMemcpyToSymbolAsync(batchinfos, infos, sizeof(BatchInfo) * 26, 0, cudaMemcpyHostToDevice, uploadstream));
+    CUDA_CHECK(cudaMemcpyAsync(batchinfos, infos, sizeof(BatchInfo) * 26, cudaMemcpyHostToDevice, uploadstream));
+	//CUDA_CHECK(cudaMemcpyToSymbolAsync(batchinfos, infos, sizeof(BatchInfo) * 26, 0, cudaMemcpyHostToDevice, uploadstream));
 
 	static unsigned int hstart_padded[27];
 
@@ -312,7 +248,8 @@ namespace BipsBatch
 	for(int i = 0; i < 26; ++i)
 	    hstart_padded[i + 1] = hstart_padded[i] + 16 * (((unsigned int)infos[i].ndst + 15)/ 16) ;
 
-	CUDA_CHECK(cudaMemcpyToSymbolAsync(start, hstart_padded, sizeof(hstart_padded), 0, cudaMemcpyHostToDevice, uploadstream));
+    CUDA_CHECK(cudaMemcpyAsync(start, hstart_padded, sizeof(hstart_padded), cudaMemcpyHostToDevice, uploadstream));
+	//CUDA_CHECK(cudaMemcpyToSymbolAsync(start, hstart_padded, sizeof(hstart_padded), 0, cudaMemcpyHostToDevice, uploadstream));
 
 	const int nthreads = 2 * hstart_padded[26];
 
@@ -321,10 +258,87 @@ namespace BipsBatch
 	CUDA_CHECK(cudaStreamWaitEvent(computestream, evhalodone, 0));
 
 	if (nthreads)
-	interaction_kernel<<< (nthreads + 127) / 128, 128, 0, computestream>>>(aij, gamma, sigma * invsqrtdt, nthreads, acc, n);
+	interaction_kernel<<< (nthreads + 127) / 128, 128, 0, computestream>>>(start, batchinfos, aij, gamma, sigma * invsqrtdt, nthreads, acc, n);
 
 	CUDA_CHECK(cudaPeekAtLastError());
     }
+}
+
+
+using namespace std;
+
+ComputeDPD::ComputeDPD(Globals* globals, MPI_Comm cartcomm): SolventExchange(globals, cartcomm, 0), local_trunk(0, 0, 0, 0)
+{
+    CUDA_CHECK(cudaMalloc(&start, sizeof(unsigned) * 27));
+    CUDA_CHECK(cudaMalloc(&batchinfos, sizeof(BipsBatch::BatchInfo) * 26));
+
+    int myrank;
+    MPI_CHECK(MPI_Comm_rank(cartcomm, &myrank));
+
+    for(int i = 0; i < 26; ++i)
+    {
+	int d[3] = { (i + 2) % 3 - 1, (i / 3 + 2) % 3 - 1, (i / 9 + 2) % 3 - 1 };
+
+	int coordsneighbor[3];
+	for(int c = 0; c < 3; ++c)
+	    coordsneighbor[c] = (coords[c] + d[c] + dims[c]) % dims[c];
+
+	int indx[3];
+	for(int c = 0; c < 3; ++c)
+	    indx[c] = min(coords[c], coordsneighbor[c]) * dims[c] + max(coords[c], coordsneighbor[c]);
+
+	const int interrank_seed_base = indx[0] + dims[0] * dims[0] * (indx[1] + dims[1] * dims[1] * indx[2]);
+
+	int interrank_seed_offset;
+
+	{
+	    const bool isplus =
+		d[0] + d[1] + d[2] > 0 ||
+		d[0] + d[1] + d[2] == 0 && (
+		    d[0] > 0 || d[0] == 0 && (
+			d[1] > 0 || d[1] == 0 && d[2] > 0
+			)
+		    );
+
+	    const int mysign = 2 * isplus - 1;
+
+	    int v[3] = { 1 + mysign * d[0], 1 + mysign * d[1], 1 + mysign *d[2] };
+
+	    interrank_seed_offset = v[0] + 3 * (v[1] + 3 * v[2]);
+	}
+
+	const int interrank_seed = interrank_seed_base + interrank_seed_offset;
+
+	interrank_trunks[i] = Logistic::KISS(390 + interrank_seed, interrank_seed  + 615, 12309, 23094);
+
+	const int dstrank = dstranks[i];
+
+	if (dstrank != myrank)
+	    interrank_masks[i] = min(dstrank, myrank) == myrank;
+	else
+	{
+	    int alter_ego = (2 - d[0]) % 3 + 3 * ((2 - d[1]) % 3 + 3 * ((2 - d[2]) % 3));
+	    interrank_masks[i] = min(i, alter_ego) == i;
+	}
+    }
+}
+
+ComputeDPD::~ComputeDPD()
+{
+    CUDA_CHECK(cudaFree(start));
+    CUDA_CHECK(cudaFree(batchinfos));
+}
+
+void ComputeDPD::local_interactions(const Particle * const xyzuvw, const float4 * const xyzouvwo, const ushort4 * const xyzo_half,
+				    const int n, Acceleration * const a, const int * const cellsstart, const int * const cellscount, cudaStream_t stream)
+{
+    NVTX_RANGE("DPD/local", NVTX_C5);
+
+    if (n > 0)
+	forces_dpd_cuda_nohost((float*)xyzuvw, xyzouvwo, xyzo_half, (float *)a, n,
+			       cellsstart, cellscount,
+			       1, XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN, aij, gammadpd,
+			       sigma, 1. / sqrt(dt), local_trunk.get_float(), stream);
 }
 
 void ComputeDPD::remote_interactions(const Particle * const p, const int n, Acceleration * const a, cudaStream_t stream, cudaStream_t uploadstream)
@@ -357,7 +371,7 @@ void ComputeDPD::remote_interactions(const Particle * const p, const int n, Acce
 	infos[i] = entry;
     }
 
-    BipsBatch::interactions(aij, gammadpd, sigma, 1. / sqrt(dt), infos, stream, uploadstream, (float *)a, n);
+    BipsBatch::interactions(start, batchinfos, aij, gammadpd, sigma, 1. / sqrt(dt), infos, stream, uploadstream, (float *)a, n);
 
     CUDA_CHECK(cudaPeekAtLastError());
 }
