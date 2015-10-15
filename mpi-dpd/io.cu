@@ -376,7 +376,7 @@ void H5FieldDump::_write_fields(const char * const path2h5,
 #endif // NO_H5
 }
 
-H5FieldDump::H5FieldDump(MPI_Comm cartcomm): directory_exists(false), cartcomm(cartcomm), last_idtimestep(0)
+H5FieldDump::H5FieldDump(Globals* globals, MPI_Comm cartcomm): GlobalsInjector(globals), directory_exists(false), cartcomm(cartcomm), last_idtimestep(0)
 {
     int dims[3], periods[3], coords[3];
     MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
@@ -443,7 +443,7 @@ void H5FieldDump::dump(MPI_Comm comm, const Particle * const p, const int n, int
     }
 
     char filepath[512];
-    sprintf(filepath, "h5/flowfields-%04d.h5", idtimestep / steps_per_dump);
+    sprintf(filepath, "h5/flowfields-%04d.h5", idtimestep / globals->steps_per_dump);
 
     float * data[] = { rho.data(), u[0].data(), u[1].data(), u[2].data() };
 
@@ -467,10 +467,10 @@ H5FieldDump::~H5FieldDump()
     fprintf(xmf, "   <Grid Name=\"TimeSeries\" GridType=\"Collection\" CollectionType=\"Temporal\">\n");
 
     const char * channelnames[] = { "density", "u", "v", "w" };
-    for(int it = 0; it <= last_idtimestep; it += steps_per_dump)
+    for(int it = 0; it <= last_idtimestep; it += globals->steps_per_dump)
     {
 	char filepath[512];
-	sprintf(filepath, "h5/flowfields-%04d.h5", it / steps_per_dump);
+	sprintf(filepath, "h5/flowfields-%04d.h5", it / globals->steps_per_dump);
 
 	_xdmf_grid(xmf, it * dt,  string(filepath).substr(string(filepath).find_last_of("/") + 1).c_str(), channelnames, 4);
     }

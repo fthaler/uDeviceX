@@ -15,6 +15,7 @@
 #include <string>
 
 #include "common.h"
+#include "globals.h"
 
 
 void xyz_dump(MPI_Comm comm, MPI_Comm cartcomm, const char * filename, const char * particlename, Particle * particles, int n, bool append);
@@ -45,7 +46,7 @@ public:
     ~H5PartDump();
 };
 
-class H5FieldDump
+class H5FieldDump : public GlobalsInjector
 {
     bool directory_exists;
     
@@ -63,7 +64,7 @@ class H5FieldDump
 
 public:
 
-    H5FieldDump(MPI_Comm cartcomm);
+    H5FieldDump(Globals* globals, MPI_Comm cartcomm);
 
     void dump(MPI_Comm comm, const Particle * const p, const int n, int idtimestep);
 

@@ -515,7 +515,7 @@ void Simulation::_datadump_async()
 #endif
 
     H5PartDump dump_part("allparticles->h5part", activecomm, cartcomm), *dump_part_solvent = NULL;
-    H5FieldDump dump_field(cartcomm);
+    H5FieldDump dump_field(globals, cartcomm);
 
     MPI_CHECK(MPI_Comm_rank(myactivecomm, &rank));
 
