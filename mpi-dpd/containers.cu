@@ -278,14 +278,14 @@ void ParticleArray::clear_velocity()
 	ParticleKernels::clear_velocity<<<(xyzuvw.size + 127) / 128, 128 >>>(xyzuvw.data, xyzuvw.size);
 }
 
-void CollectionRBC::resize(const int count)
+void CollectionBase::resize(const int count)
 {
     ncells = count;
 
     ParticleArray::resize(count * get_nvertices());
 }
 
-void CollectionRBC::preserve_resize(const int count)
+void CollectionBase::preserve_resize(const int count)
 {
     ncells = count;
 
@@ -298,24 +298,27 @@ struct TransformedExtent
     float transform[4][4];
 };
 
-CollectionRBC::CollectionRBC(Globals* globals, MPI_Comm cartcomm):
-ParticleArray(globals), cartcomm(cartcomm), ncells(0)
+CollectionBase::CollectionBase(Globals* globals, MPI_Comm cartcomm) :
+    ParticleArray(globals), indices(NULL), ntriangles(-1), nvertices(-1),
+    cartcomm(cartcomm), ncells(0)
 {
     MPI_CHECK(MPI_Comm_rank(cartcomm, &myrank));
     MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
+}
 
-    CudaRBC::get_triangle_indexing(
-            globals->collectionrbc_indices,
-            globals->collectionrbc_ntriangles);
+CollectionRBC::CollectionRBC(Globals* globals, MPI_Comm cartcomm)
+    : CollectionBase(globals, cartcomm)
+{
+    CudaRBC::get_triangle_indexing(indices, ntriangles);
     CudaRBC::Extent extent;
-    CudaRBC::setup(globals->collectionrbc_nvertices, extent);
+    CudaRBC::setup(nvertices, extent);
 
 /*    assert(extent.xmax - extent.xmin < XSIZE_SUBDOMAIN);
     assert(extent.ymax - extent.ymin < YSIZE_SUBDOMAIN);
     assert(extent.zmax - extent.zmin < ZSIZE_SUBDOMAIN);*/
 }
 
-void CollectionRBC::setup(const char * const path2ic)
+void CollectionBase::setup(const char * const path2ic)
 {
     vector<TransformedExtent> allrbcs;
 
@@ -398,7 +401,7 @@ void CollectionRBC::_initialize(float *device_xyzuvw, const float (*transform)[4
     CudaRBC::initialize(device_xyzuvw, transform);
 }
 
-void CollectionRBC::remove(const int * const entries, const int nentries)
+void CollectionBase::remove(const int * const entries, const int nentries)
 {
     std::vector<bool > marks(ncells, true);
 
@@ -423,7 +426,7 @@ void CollectionRBC::remove(const int * const entries, const int nentries)
     CUDA_CHECK(cudaMemcpy(xyzuvw.data, survived.data, sizeof(Particle) * survived.size, cudaMemcpyDeviceToDevice));
 }
 
-void CollectionRBC::_dump(Globals* globals, const char * const path2xyz, const char * const format4ply,
+void CollectionBase::_dump(Globals* globals, const char * const path2xyz, const char * const format4ply,
 			  MPI_Comm comm, MPI_Comm cartcomm, const int ntriangles, const int ncells, const int nvertices, int (* const indices)[3],
 			  Particle * const p, const Acceleration * const a, const int n, const int iddatadump)
 {

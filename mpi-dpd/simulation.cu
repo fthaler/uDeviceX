@@ -217,7 +217,7 @@ void Simulation::_report(const bool verbose, const int idtimestep)
     }
 }
 
-void Simulation::_remove_bodies_from_wall(CollectionRBC * coll)
+void Simulation::_remove_bodies_from_wall(CollectionBase * coll)
 {
     if (!coll || !coll->count())
 	return;
@@ -603,10 +603,10 @@ void Simulation::_datadump_async()
 	    NVTX_RANGE("ply dump", NVTX_C5);
 
 	    if (rbcscoll)
-		CollectionRBC::dump(globals, myactivecomm, mycartcomm, p + datadump_nsolvent, a + datadump_nsolvent, datadump_nrbcs, iddatadump);
+		    rbcscoll->dump(myactivecomm, mycartcomm, p + datadump_nsolvent, a + datadump_nsolvent, datadump_nrbcs, iddatadump);
 
 	    if (ctcscoll)
-		CollectionCTC::dump(globals, myactivecomm, mycartcomm, p + datadump_nsolvent + datadump_nrbcs,
+		    ctcscoll->dump(myactivecomm, mycartcomm, p + datadump_nsolvent + datadump_nrbcs,
 				    a + datadump_nsolvent + datadump_nrbcs, datadump_nctcs, iddatadump);
 	}
 

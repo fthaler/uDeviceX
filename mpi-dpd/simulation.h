@@ -79,7 +79,7 @@ class Simulation : public GlobalsInjector
     void _redistribute();
     void _report(const bool verbose, const int idtimestep);
     void _create_walls(const bool verbose, bool & termination_request);
-    void _remove_bodies_from_wall(CollectionRBC * coll);
+    void _remove_bodies_from_wall(CollectionBase * coll);
     void _forces();
     void _datadump(const int idtimestep);
     void _update_and_bounce();

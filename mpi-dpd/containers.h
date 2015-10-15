@@ -29,8 +29,8 @@ struct ParticleArray : public GlobalsInjector
 
     ParticleArray(Globals* globals = NULL) : GlobalsInjector(globals) {}
 
-    void resize(int n);
-    void preserve_resize(int n);
+    virtual void resize(int n);
+    virtual void preserve_resize(int n);
     void update_stage1(const float driving_acceleration, cudaStream_t stream);
     void update_stage2_and_1(const float driving_acceleration, cudaStream_t stream);
     void clear_velocity();
@@ -41,22 +41,18 @@ struct ParticleArray : public GlobalsInjector
 	}
 };
 
-class CollectionRBC : public ParticleArray
+class CollectionBase : public ParticleArray
 {
-/* moved static variables to globals.h for use with AMPI
-    static int (*indices)[3];
-    static int ntriangles;
-    static int nvertices;
-*/
-
 protected:
+    int (*indices)[3];
+    int ntriangles;
+    int nvertices;
+
     MPI_Comm cartcomm;
 
     int ncells, myrank, dims[3], periods[3], coords[3];
 
-    virtual int _ntriangles() const { return globals->collectionrbc_ntriangles; }
-
-    virtual void _initialize(float *device_xyzuvw, const float (*transform)[4]);
+    virtual void _initialize(float *device_xyzuvw, const float (*transform)[4]) = 0;
 
     static void _dump(Globals* globals, const char * const path2xyz, const char * const format4ply,
 		      MPI_Comm comm, MPI_Comm cartcomm, const int ntriangles, const int ncells, const int nvertices,
@@ -64,29 +60,35 @@ protected:
 		      Particle * const p, const Acceleration * const a, const int n, const int iddatadump);
 
 public:
+    int get_nvertices() const { return nvertices; }
 
-    virtual int get_nvertices() const { return globals->collectionrbc_nvertices; }
+    CollectionBase(Globals* globals, MPI_Comm cartcomm);
 
-    CollectionRBC(Globals* globals, MPI_Comm cartcomm);
+    void setup(const char* const path2ic);
 
-    void setup(const char * const path2ic);
+    Particle* data() { return xyzuvw.data; }
+    Acceleration* acc() { return axayaz.data; }
 
-    Particle * data() { return xyzuvw.data; }
-    Acceleration * acc() { return axayaz.data; }
-
-    void remove(const int * const entries, const int nentries);
-    void resize(const int rbcs_count);
-    void preserve_resize(int n);
+    void remove(const int* const entries, const int nentries);
+    virtual void resize(const int rbcs_count);
+    virtual void preserve_resize(int n);
 
     int count() { return ncells; }
-    int pcount() { return ncells * get_nvertices(); }
+    int pcount() { return ncells * nvertices; }
+    virtual void dump(MPI_Comm comm, MPI_Comm cartcomm,
+		     Particle * const p, const Acceleration * const a, const int n, const int iddatadump) = 0;
+};
 
-    static void dump(Globals* globals, MPI_Comm comm, MPI_Comm cartcomm,
+class CollectionRBC : public CollectionBase
+{
+protected:
+    void _initialize(float *device_xyzuvw, const float (*transform)[4]);
+public:
+    CollectionRBC(Globals* globals, MPI_Comm cartcomm);
+    void dump(MPI_Comm comm, MPI_Comm cartcomm,
 		     Particle * const p, const Acceleration * const a, const int n, const int iddatadump)
     {
-        int nvertices = globals->collectionrbc_nvertices;
-        int ntriangles = globals->collectionrbc_ntriangles;
-        int (*indices)[3] = globals->collectionrbc_indices;
-	_dump(globals, "xyz/rbcs.xyz", "ply/rbcs-%04d.ply", comm, cartcomm, ntriangles, n / nvertices, nvertices, indices, p, a, n, iddatadump);
+	    _dump(globals, "xyz/rbcs.xyz", "ply/rbcs-%04d.ply", comm, cartcomm,
+              ntriangles, n / nvertices, nvertices, indices, p, a, n, iddatadump);
     }
 };

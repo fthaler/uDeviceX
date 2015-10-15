@@ -6,16 +6,6 @@
 Globals::Globals() : localcomm(this) {
     // global variables from main.cu
     currently_profiling = false;
-
-    // static variables of class CollectionRBC
-    collectionrbc_indices = NULL;
-    collectionrbc_ntriangles = -1;
-    collectionrbc_nvertices = -1;
-
-    // static variables of class CollectionCTC
-    collectionctc_indices = NULL;
-    collectionctc_ntriangles = -1;
-    collectionctc_nvertices = -1;
 }
 
 void Globals::mpiDependentInit(MPI_Comm activecomm) {
