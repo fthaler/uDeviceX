@@ -23,11 +23,8 @@ namespace SolidWallsKernel
     __global__ void fill_keys(cudaTextureObject_t texSDF, const Particle * const particles, const int n, int * const key);
 }
 
-class ComputeWall
+class ComputeWall : public GlobalsInjector
 {
-    // global variable pointer for AMPI
-    Globals* globals;
-
     MPI_Comm cartcomm;
     int myrank, dims[3], periods[3], coords[3];
 

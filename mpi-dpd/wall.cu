@@ -758,7 +758,7 @@ struct FieldSampler
 
 ComputeWall::ComputeWall(Globals* globals, MPI_Comm cartcomm, Particle* const p, const int n, int& nsurvived,
         ExpectedMessageSizes& new_sizes, const bool verbose):
-            globals(globals),
+            GlobalsInjector(globals),
             cartcomm(cartcomm), arrSDF(NULL), solid4(NULL), solid_size(0),
             cells(globals, XSIZE_SUBDOMAIN + 2 * XMARGIN_WALL, YSIZE_SUBDOMAIN + 2 * YMARGIN_WALL, ZSIZE_SUBDOMAIN + 2 * ZMARGIN_WALL)
 {
@@ -916,7 +916,7 @@ ComputeWall::ComputeWall(Globals* globals, MPI_Comm cartcomm, Particle* const p,
         const float amplitude_rescaling = L[0] / (sampler.extent[0] / dims[0]);
         sampler.sample(start, spacing, size, walldata, amplitude_rescaling);
 
-        H5FieldDump dump(cartcomm);
+        H5FieldDump dump(globals, cartcomm);
         dump.dump_scalarfield(cartcomm, walldata, "wall");
 
         delete [] walldata;
