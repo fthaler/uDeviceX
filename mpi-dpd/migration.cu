@@ -13,19 +13,19 @@ Migratable::Migratable()
 #endif
 }
 
-void Migratable::mallocMigratableHost(void** ptr, int size)
+void Migratable::malloc_migratable_host(void** ptr, int size)
 {
     *ptr = malloc(size);
-    setInactiveBuffer(ptr, size, Buffer::HOST);
+    set_inactive_buffer(ptr, size, Buffer::HOST);
 }
 
-void Migratable::mallocMigratableDevice(void** ptr, int size)
+void Migratable::malloc_migratable_device(void** ptr, int size)
 {
     CUDA_CHECK(cudaMalloc(ptr, size));
-    setInactiveBuffer(ptr, size, Buffer::DEVICE);
+    set_inactive_buffer(ptr, size, Buffer::DEVICE);
 }
 
-void Migratable::freeMigratable(void* ptr)
+void Migratable::free_migratable(void* ptr)
 {
     if (ptr == NULL)
         return;
