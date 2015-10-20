@@ -5,22 +5,23 @@ ARCH_VAL ?= compute_35
 CODE_VAL ?= sm_35
 
 NVCCFLAGS += -I$(HDF5_DIR)/include -Xcudafe "--diag_suppress=unrecognized_gcc_pragma"
-NVCCFLAGS +=  -arch $(ARCH_VAL) -code $(CODE_VAL) -O3 -use_fast_math -g -DNDEBUG
+NVCCFLAGS +=  -arch $(ARCH_VAL) -code $(CODE_VAL) -O3 -use_fast_math -g
 NVCCFLAGS += -I$(CHARMDIR)/include
-CXXFLAGS += -L../cuda-dpd/dpd -L../cuda-rbc/ -L../cuda-ctc/ -O3 -g  -std=c++11 -DNDEBUG
+CXXFLAGS += -L../cuda-dpd/dpd -L../cuda-rbc/ -L../cuda-ctc/ -O3 -g  -std=c++11
 CXXFLAGS += -I$(CHARMDIR)/include
 NVCCFLAGS += -I../cuda-dpd/dpd -I../cuda-rbc/ -I../cuda-ctc
 #NVCCFLAGS +=  -DREPORT_TOPOLOGY $(CRAY_PMI_INCLUDE_OPTS)
 #NVCCFLAGS += -DCUSTOM_REORDERING=1
 
 # AMPI-specific
-AMPICXX = $(CHARMDIR)/bin/ampicxx
+AMPICXX ?= $(CHARMDIR)/bin/ampicxx
+CXXFLAGS += -module CommonLBs
 # currently no IO is supported
-mpio=0
-mpithread=0
-h5part=0
-h5=0
-datadump=0
+mpio ?= 0
+mpithread ?= 0
+h5part ?= 0
+h5 ?= 0
+datadump ?= 0
 
 OBJS = 	dpd.o wall.o fsi.o contact.o \
 	redistribute-particles.o redistribute-rbcs.o \
@@ -105,6 +106,10 @@ libcuda-rbc:
 
 libcuda-ctc:
 	$(MAKE) -C ../cuda-ctc/ libcuda-ctc.a CXX="$(CXX)" NVCC="$(NVCC)" ARCH_VAL="$(ARCH_VAL)" CODE_VAL="$(CODE_VAL)" NVCCFLAGS="$(NVCCFLAGS)"
+
+migratable-test: migratable-test.o migration.o
+	$(AMPICXX) $(CXXFLAGS) $+ -lcudart -o $@
+
 
 clean:
 	rm -f test *.o *.d slevel.txt
