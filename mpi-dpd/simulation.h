@@ -35,13 +35,14 @@
 #include "redistribute-rbcs.h"
 #include "ctc.h"
 #include "io.h"
+#include "migratable-datastructures.h"
 
 class Simulation : public GlobalsInjector
 {
     ParticleArray particles_pingpong[2];
     ParticleArray * particles, * newparticles;
-    SimpleDeviceBuffer<float4> xyzouvwo;
-    SimpleDeviceBuffer<ushort4> xyzo_half;
+    MigratableDeviceBuffer<float4> xyzouvwo;
+    MigratableDeviceBuffer<ushort4> xyzo_half;
     
     CellLists cells;
     CollectionRBC * rbcscoll;

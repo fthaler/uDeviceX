@@ -28,7 +28,7 @@ OBJS = 	dpd.o wall.o fsi.o contact.o \
 	solvent-exchange.o solute-exchange.o \
 	common.o containers.o io.o \
 	scan.o minmax.o redistancing.o \
-	simulation.o main.o globals.o
+	simulation.o main.o globals.o migration.o
 
 LIBS = -lcuda-dpd -lcuda-rbc -lcuda-ctc -lcudart -ldl -lz
 
