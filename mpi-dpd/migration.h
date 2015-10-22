@@ -13,8 +13,10 @@ public:
 protected:
     Migratable();
 
+    void malloc_migratable(void** ptr, int size);
     void malloc_migratable_host(void** ptr, int size);
     void malloc_migratable_device(void** ptr, int size);
+    void malloc_migratable_pinned(void** ptr, int size);
     void free_migratable(void* ptr);
 
 private:
@@ -23,8 +25,10 @@ private:
         enum Status
         {
             INACTIVE = 0,
-            HOST,
-            DEVICE
+            MALLOCED,
+            CUDA_DEVICE,
+            CUDA_HOST,
+            CUDA_PINNED
         };
 
         void *ptr;
@@ -44,9 +48,10 @@ private:
         return buffers[0];
     }
 
-    void set_inactive_buffer(void** ptr, int size, Buffer::Status status)
+    void allocate_inactive_buffer(void** ptr, int size, Buffer::Status status)
     {
         Buffer& b = get_inactive_buffer();
+        allocate(ptr, size, status);
         b.ptr = *ptr;
         b.size = size;
         b.offset = get_ptr_offset(ptr);
@@ -57,6 +62,9 @@ private:
     {
         return (int) ((ptrdiff_t) ptr - (ptrdiff_t) this);
     }
+
+    static void allocate(void** ptr, int size, Buffer::Status status);
+    static void free(void* ptr, Buffer::Status status);
 
     Buffer buffers[MAX_BUFFERS];
 };
