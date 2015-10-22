@@ -86,6 +86,7 @@ class Simulation : public GlobalsInjector
     void _update_and_bounce();
     void _lockstep();
 
+    double report_t0_a, report_t0_b;
     pthread_t thread_datadump;
     pthread_mutex_t mutex_datadump;
     pthread_cond_t request_datadump, done_datadump;

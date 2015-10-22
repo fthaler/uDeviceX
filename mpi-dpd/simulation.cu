@@ -166,11 +166,9 @@ void Simulation::_report(const bool verbose, const int idtimestep)
     report_host_memory_usage(activecomm, stdout);
 
     {
-	static double t0 = MPI_Wtime(), t1;
+	double t1 = MPI_Wtime();
 
-	t1 = MPI_Wtime();
-
-	float host_busy_time = (MPI_Wtime() - t0) - host_idle_time;
+	float host_busy_time = (MPI_Wtime() - report_t0_a) - host_idle_time;
 
 	host_busy_time *= 1e3 / globals->steps_per_report;
 
@@ -191,17 +189,15 @@ void Simulation::_report(const bool verbose, const int idtimestep)
 	globals->localcomm.print_particles(particles->size);
 
 	host_idle_time = 0;
-	t0 = t1;
+	report_t0_a = t1;
     }
 
     {
-	static double t0 = MPI_Wtime(), t1;
-
-	t1 = MPI_Wtime();
+	double t1 = MPI_Wtime();
 
 	if (verbose)
 	{
-	    printf("\x1b[92mbeginning of time step %d (%.3f ms)\x1b[0m\n", idtimestep, (t1 - t0) * 1e3 / globals->steps_per_report);
+	    printf("\x1b[92mbeginning of time step %d (%.3f ms)\x1b[0m\n", idtimestep, (t1 - report_t0_b) * 1e3 / globals->steps_per_report);
 	    printf("in more details, per time step:\n");
 	    double tt = 0;
 	    for(std::map<string, double>::iterator it = timings.begin(); it != timings.end(); ++it)
@@ -210,10 +206,10 @@ void Simulation::_report(const bool verbose, const int idtimestep)
 		tt += it->second;
 		it->second = 0;
 	    }
-	    printf("discrepancy: %.3f ms\n", ((t1 - t0) - tt) * 1e3 / globals->steps_per_report);
+	    printf("discrepancy: %.3f ms\n", ((t1 - report_t0_b) - tt) * 1e3 / globals->steps_per_report);
 	}
 
-	t0 = t1;
+	report_t0_b = t1;
     }
 }
 
