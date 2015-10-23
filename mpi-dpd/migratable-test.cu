@@ -11,12 +11,13 @@
 class MigratableThing : public Migratable<20>
 {
 public:
-    explicit MigratableThing() : n_ptrs(0), buffer_size(512), id(id) {}
+    explicit MigratableThing() : n_ptrs(0), buffer_size(512), id(id),
+        dev_buffer2(this), host_buffer2(this), pin_buffer2(this) {}
 
     void alloc_some_data(int type)
     {
         assert(type >= 0 && type < 4);
-        if (n_ptrs == MAX_BUFFERS)
+        if (n_ptrs >= MAX_BUFFERS - 4)
             return;
         switch (type) {
         case 0:
@@ -67,22 +68,52 @@ public:
 
     void resize_host_buffer(int size)
     {
-        dev_buffer.resize(size);
+        host_buffer.resize(size);
     }
 
     void preserve_resize_host_buffer(int size)
     {
-        dev_buffer.preserve_resize(size);
+        host_buffer.preserve_resize(size);
     }
 
     void resize_pinned_buffer(int size)
     {
-        dev_buffer.resize(size);
+        pin_buffer.resize(size);
     }
 
     void preserve_resize_pinned_buffer(int size)
     {
-        dev_buffer.preserve_resize(size);
+        pin_buffer.preserve_resize(size);
+    }
+
+    void resize_device_buffer2(int size)
+    {
+        dev_buffer2.resize(size);
+    }
+
+    void preserve_resize_device_buffer2(int size)
+    {
+        dev_buffer2.preserve_resize(size);
+    }
+
+    void resize_host_buffer2(int size)
+    {
+        host_buffer2.resize(size);
+    }
+
+    void preserve_resize_host_buffer2(int size)
+    {
+        host_buffer2.preserve_resize(size);
+    }
+
+    void resize_pinned_buffer2(int size)
+    {
+        pin_buffer2.resize(size);
+    }
+
+    void preserve_resize_pinned_buffer2(int size)
+    {
+        pin_buffer2.preserve_resize(size);
     }
 
     void set_buffer_size(int new_buffer_size) { buffer_size = new_buffer_size; }
@@ -96,6 +127,10 @@ private:
     MigratableDeviceBuffer<int> dev_buffer;
     MigratableHostBuffer<float> host_buffer;
     MigratablePinnedBuffer<double> pin_buffer;
+
+    MigratableDeviceBuffer2<int> dev_buffer2;
+    MigratableHostBuffer2<float> host_buffer2;
+    MigratablePinnedBuffer2<double> pin_buffer2;
 };
 
 int main(int argc, char** argv)
@@ -123,7 +158,8 @@ int main(int argc, char** argv)
         int j = rand() % n;
         MigratableThing& mt = things[j];
         std::cout << "things[" << mt.get_id() << "]";
-        int t = rand() % 11;
+        int t = rand() % 14;
+        int size = 0;
         switch (t) {
         case 0:
         case 1:
@@ -137,28 +173,49 @@ int main(int argc, char** argv)
             std::cout << ".free_last()";
             break;
         case 5:
-            mt.resize_device_buffer(rand() % 1024);
-            std::cout << ".resize_device_buffer()";
+            size = rand() % 1024;
+            mt.resize_device_buffer(size);
+            std::cout << ".resize_device_buffer(" << size << ")";
             break;
         case 6:
-            mt.preserve_resize_device_buffer(rand() % 1024);
-            std::cout << ".preserve_resize_device_buffer()";
+            size = rand() % 1024;
+            mt.preserve_resize_device_buffer(size);
+            std::cout << ".preserve_resize_device_buffer(" << size << ")";
             break;
         case 7:
-            mt.resize_host_buffer(rand() % 1024);
-            std::cout << ".resize_host_buffer()";
+            size = rand() % 1024;
+            mt.resize_host_buffer(size);
+            std::cout << ".resize_host_buffer(" << size << ")";
             break;
         case 8:
-            mt.preserve_resize_host_buffer(rand() % 1024);
-            std::cout << ".preserve_resize_host_buffer()";
+            size = rand() % 1024;
+            mt.preserve_resize_host_buffer(size);
+            std::cout << ".preserve_resize_host_buffer(" << size << ")";
             break;
         case 9:
-            mt.resize_pinned_buffer(rand() % 1024);
-            std::cout << ".resize_pinned_buffer()";
+            size = rand() % 1024;
+            mt.resize_pinned_buffer(size);
+            std::cout << ".resize_pinned_buffer(" << size << ")";
             break;
         case 10:
-            mt.preserve_resize_pinned_buffer(rand() % 1024);
-            std::cout << ".preserve_resize_pinned_buffer()";
+            size = rand() % 1024;
+            mt.preserve_resize_pinned_buffer(size);
+            std::cout << ".preserve_resize_pinned_buffer(" << size << ")";
+            break;
+        case 11:
+            size = rand() % 1024;
+            mt.preserve_resize_host_buffer2(size);
+            std::cout << ".preserve_resize_host_buffer2(" << size << ")";
+            break;
+        case 12:
+            size = rand() % 1024;
+            mt.resize_pinned_buffer2(size);
+            std::cout << ".resize_pinned_buffer2(" << size << ")";
+            break;
+        case 13:
+            size = rand() % 1024;
+            mt.preserve_resize_pinned_buffer2(size);
+            std::cout << ".preserve_resize_pinned_buffer2(" << size << ")";
             break;
         }
         std::cout << std::endl;
