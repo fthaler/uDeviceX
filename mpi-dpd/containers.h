@@ -17,6 +17,7 @@
 
 #include "common.h"
 #include "globals.h"
+#include "migratable-datastructures.h"
 
 struct ParticleArray : public GlobalsInjector
 {
@@ -24,8 +25,8 @@ struct ParticleArray : public GlobalsInjector
 
     float3 origin, globalextent;
 
-    SimpleDeviceBuffer<Particle> xyzuvw;
-    SimpleDeviceBuffer<Acceleration> axayaz;
+    MigratableDeviceBuffer<Particle> xyzuvw;
+    MigratableDeviceBuffer<Acceleration> axayaz;
 
     ParticleArray(Globals* globals = NULL) : GlobalsInjector(globals) {}
 
