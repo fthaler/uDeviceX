@@ -16,10 +16,12 @@
 
 #include "common.h"
 #include "globals.h"
+#include "migration.h"
+#include "migratable-datastructures.h"
 
 namespace PackingHalo { struct CellPackSOA; struct SendBagInfo; }
 
-class SolventExchange : public GlobalsInjector
+class SolventExchange : public GlobalsInjector, public Migratable<300>
 {
     // global variables moved from solvent-exchange.cu
     int ncells;
@@ -41,10 +43,10 @@ protected:
     {
 	int expected;
 
-	SimpleDeviceBuffer<int> scattered_entries, tmpstart, tmpcount, dcellstarts;
-	SimpleDeviceBuffer<Particle> dbuf;
-	PinnedHostBuffer<int> hcellstarts;
-	PinnedHostBuffer<Particle> hbuf;
+	MigratableDeviceBuffer2<int> scattered_entries, tmpstart, tmpcount, dcellstarts;
+	MigratableDeviceBuffer2<Particle> dbuf;
+	MigratablePinnedBuffer2<int> hcellstarts;
+	MigratablePinnedBuffer2<Particle> hbuf;
 
 	void setup(const int estimate, const int nhalocells)
 	    {
@@ -69,10 +71,10 @@ protected:
     {
 	int expected;
 
-	PinnedHostBuffer<int> hcellstarts;
-	PinnedHostBuffer<Particle> hbuf;
-	SimpleDeviceBuffer<Particle> dbuf;
-	SimpleDeviceBuffer<int> dcellstarts;
+	MigratablePinnedBuffer2<int> hcellstarts;
+	MigratablePinnedBuffer2<Particle> hbuf;
+	MigratableDeviceBuffer2<Particle> dbuf;
+	MigratableDeviceBuffer2<int> dcellstarts;
 
 	void setup(const int estimate, const int nhalocells)
 	    {
