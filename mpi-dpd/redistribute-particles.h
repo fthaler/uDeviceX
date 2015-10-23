@@ -15,8 +15,9 @@
 #include <mpi.h>
 
 #include "common.h"
+#include "migration.h"
 
-class RedistributeParticles
+class RedistributeParticles : public Migratable<100>
 {
     static const int basetag = 950;
     

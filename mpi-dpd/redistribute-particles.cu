@@ -447,13 +447,13 @@ subindices_remote(1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSI
 {
     safety_factor = getenv("RDP_COMM_FACTOR") ? atof(getenv("RDP_COMM_FACTOR")) : 1.2;
 
-    CUDA_CHECK(cudaMalloc(&pack_buffers, sizeof(PackBuffer) * 27));
-    CUDA_CHECK(cudaMalloc(&unpack_buffers, sizeof(UnpackBuffer) * 27));
-    CUDA_CHECK(cudaMalloc(&pack_count, sizeof(int) * 27));
-    CUDA_CHECK(cudaMalloc(&pack_start_padded, sizeof(int) * 28));
-    CUDA_CHECK(cudaMalloc(&unpack_start, sizeof(int) * 28));
-    CUDA_CHECK(cudaMalloc(&unpack_start_padded, sizeof(int) * 28));
-    CUDA_CHECK(cudaMalloc(&failed, sizeof(bool)));
+    malloc_migratable_device((void**) &pack_buffers, sizeof(PackBuffer) * 27);
+    malloc_migratable_device((void**) &unpack_buffers, sizeof(UnpackBuffer) * 27);
+    malloc_migratable_device((void**) &pack_count, sizeof(int) * 27);
+    malloc_migratable_device((void**) &pack_start_padded, sizeof(int) * 28);
+    malloc_migratable_device((void**) &unpack_start, sizeof(int) * 28);
+    malloc_migratable_device((void**) &unpack_start_padded, sizeof(int) * 28);
+    malloc_migratable_device((void**) &failed, sizeof(bool));
 
 #ifdef AMPI
     // AMPI's communicator duplication is broken, this is the workaround
@@ -487,19 +487,19 @@ subindices_remote(1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSI
 
 	const int estimate = numberdensity * safety_factor * nhalocells;
 
-	CUDA_CHECK(cudaMalloc(&packbuffers[i].scattered_indices, sizeof(int) * estimate));
+	malloc_migratable_device((void**) &packbuffers[i].scattered_indices, sizeof(int) * estimate);
 
 	if (i && estimate)
 	{
-	    CUDA_CHECK(cudaHostAlloc(&pinnedhost_sendbufs[i], sizeof(float) * 6 * estimate, cudaHostAllocMapped));
+	    malloc_migratable_pinned((void**) &pinnedhost_sendbufs[i], sizeof(float) * 6 * estimate);
 	    CUDA_CHECK(cudaHostGetDevicePointer(&packbuffers[i].buffer, pinnedhost_sendbufs[i], 0));
 
-	    CUDA_CHECK(cudaHostAlloc(&pinnedhost_recvbufs[i], sizeof(float) * 6 * estimate, cudaHostAllocMapped));
+	    malloc_migratable_pinned((void**) &pinnedhost_recvbufs[i], sizeof(float) * 6 * estimate);
 	    CUDA_CHECK(cudaHostGetDevicePointer(&unpackbuffers[i].buffer, pinnedhost_recvbufs[i], 0));
 	}
 	else
 	{
-      	    CUDA_CHECK(cudaMalloc(&packbuffers[i].buffer, sizeof(float) * 6 * estimate));
+      	    malloc_migratable_device((void**) &packbuffers[i].buffer, sizeof(float) * 6 * estimate);
 	    unpackbuffers[i].buffer = packbuffers[i].buffer;
 
 	    pinnedhost_sendbufs[i] = NULL;
@@ -551,23 +551,23 @@ void RedistributeParticles::_adjust_send_buffers(const int requested_capacities[
 
 	const int capacity = requested_capacities[i];
 
-	CUDA_CHECK(cudaFree(packbuffers[i].scattered_indices));
-	CUDA_CHECK(cudaMalloc(&packbuffers[i].scattered_indices, sizeof(int) * capacity));
+	free_migratable(packbuffers[i].scattered_indices);
+	malloc_migratable_device((void**) &packbuffers[i].scattered_indices, sizeof(int) * capacity);
 
 	if (i)
 	{
-	    CUDA_CHECK(cudaFreeHost(pinnedhost_sendbufs[i]));
+	    free_migratable(pinnedhost_sendbufs[i]);
 
-	    CUDA_CHECK(cudaHostAlloc(&pinnedhost_sendbufs[i], sizeof(float) * 6 * capacity, cudaHostAllocMapped));
+	    malloc_migratable_pinned((void**) &pinnedhost_sendbufs[i], sizeof(float) * 6 * capacity);
 	    CUDA_CHECK(cudaHostGetDevicePointer(&packbuffers[i].buffer, pinnedhost_sendbufs[i], 0));
 
 	    packbuffers[i].capacity = capacity;
 	}
 	else
 	{
-	    CUDA_CHECK(cudaFree(packbuffers[i].buffer));
+	    free_migratable(packbuffers[i].buffer);
 
-	    CUDA_CHECK(cudaMalloc(&packbuffers[i].buffer, sizeof(float) * 6 * capacity));
+	    malloc_migratable_device((void**) &packbuffers[i].buffer, sizeof(float) * 6 * capacity);
 	    unpackbuffers[i].buffer = packbuffers[i].buffer;
 
 	    assert(pinnedhost_sendbufs[i] == NULL);
@@ -596,20 +596,20 @@ bool RedistributeParticles::_adjust_recv_buffers(const int requested_capacities[
 	    //preserve-resize policy
 	    float * const old = pinnedhost_recvbufs[i];
 
-	    CUDA_CHECK(cudaHostAlloc(&pinnedhost_recvbufs[i], sizeof(float) * 6 * capacity, cudaHostAllocMapped));
+	    malloc_migratable_pinned((void**) &pinnedhost_recvbufs[i], sizeof(float) * 6 * capacity);
 	    CUDA_CHECK(cudaHostGetDevicePointer(&unpackbuffers[i].buffer, pinnedhost_recvbufs[i], 0));
 
 	    CUDA_CHECK(cudaMemcpy(pinnedhost_recvbufs[i], old, sizeof(float) * 6 * unpackbuffers[i].capacity,
 				  cudaMemcpyHostToHost));
 
-	    CUDA_CHECK(cudaFreeHost(old));
+	    free_migratable(old);
 	}
 	else
 	{
 	    printf("RedistributeParticles::_adjust_recv_buffers i==0 ooooooooooooooops %d , req %d!!\n", unpackbuffers[i].capacity, capacity);
 	    abort();
-	    //CUDA_CHECK(cudaFree(unpackbuffers[i].buffer));
-	    //CUDA_CHECK(cudaMalloc(&unpackbuffers[i].buffer, sizeof(float) * 6 * capacity));
+	    //free_migratable(unpackbuffers[i].buffer);
+	    //malloc_migratable_device((void**) &unpackbuffers[i].buffer, sizeof(float) * 6 * capacity);
 	    //assert(pinnedhost_recvbufs[i] == NULL);
 	}
 
@@ -995,19 +995,19 @@ RedistributeParticles::~RedistributeParticles()
 
     for(int i = 0; i < 27; ++i)
     {
-	CUDA_CHECK(cudaFree(packbuffers[i].scattered_indices));
+	free_migratable(packbuffers[i].scattered_indices);
 
 	if (i)
-	    CUDA_CHECK(cudaFreeHost(packbuffers[i].buffer));
+	    free_migratable(packbuffers[i].buffer);
 	else
-	    CUDA_CHECK(cudaFree(packbuffers[i].buffer));
+	    free_migratable(packbuffers[i].buffer);
     }
 
-    CUDA_CHECK(cudaFree(pack_buffers));
-    CUDA_CHECK(cudaFree(unpack_buffers));
-    CUDA_CHECK(cudaFree(pack_count));
-    CUDA_CHECK(cudaFree(pack_start_padded));
-    CUDA_CHECK(cudaFree(unpack_start));
-    CUDA_CHECK(cudaFree(unpack_start_padded));
-    CUDA_CHECK(cudaFree(failed));
+    free_migratable(pack_buffers);
+    free_migratable(unpack_buffers);
+    free_migratable(pack_count);
+    free_migratable(pack_start_padded);
+    free_migratable(unpack_start);
+    free_migratable(unpack_start_padded);
+    free_migratable(failed);
 }
