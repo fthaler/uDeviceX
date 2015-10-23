@@ -4,7 +4,7 @@
 #include "migration.h"
 
 template <typename T>
-class MigratableBufferBase : public Migratable
+class MigratableBufferBase : public Migratable<2>
 {
 public:
     int capacity, size;
@@ -78,7 +78,7 @@ class MigratableDeviceBuffer : public MigratableBufferBase<T>
 protected:
     void allocate_elements(T** ptr, int count)
     {
-        Migratable::malloc_migratable_device((void**) ptr, count * sizeof(T));
+        Migratable<2>::malloc_migratable_device((void**) ptr, count * sizeof(T));
     }
 
     void copy_elements(T* dst, T* src, int count)
@@ -98,7 +98,7 @@ class MigratableHostBuffer : public MigratableBufferBase<T>
 protected:
     void allocate_elements(T** ptr, int count)
     {
-        Migratable::malloc_migratable_host((void**) ptr, count * sizeof(T));
+        Migratable<2>::malloc_migratable_host((void**) ptr, count * sizeof(T));
     }
 
     void copy_elements(T* dst, T* src, int count)
@@ -118,7 +118,7 @@ class MigratablePinnedBuffer : public MigratableBufferBase<T>
 protected:
     void allocate_elements(T** ptr, int count)
     {
-        Migratable::malloc_migratable_pinned((void**) ptr, count * sizeof(T));
+        Migratable<2>::malloc_migratable_pinned((void**) ptr, count * sizeof(T));
     }
 
     void copy_elements(T* dst, T* src, int count)
@@ -132,7 +132,7 @@ protected:
     }
 };
 
-class MigratableCellLists : public Migratable, public CellListsBase
+class MigratableCellLists : public Migratable<2>, public CellListsBase
 {
 public:
     MigratableCellLists(Globals* globals, const int LX, const int LY, const int LZ)

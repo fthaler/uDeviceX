@@ -8,7 +8,7 @@
 #include "migration.h"
 #include "migratable-datastructures.h"
 
-class MigratableThing : public Migratable
+class MigratableThing : public Migratable<20>
 {
 public:
     explicit MigratableThing() : n_ptrs(0), buffer_size(512), id(id) {}

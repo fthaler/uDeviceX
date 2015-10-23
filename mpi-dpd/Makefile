@@ -28,7 +28,7 @@ OBJS = 	dpd.o wall.o fsi.o contact.o \
 	solvent-exchange.o solute-exchange.o \
 	common.o containers.o io.o \
 	scan.o minmax.o redistancing.o \
-	simulation.o main.o globals.o migration.o
+	simulation.o main.o globals.o
 
 LIBS = -lcuda-dpd -lcuda-rbc -lcuda-ctc -lcudart -ldl -lz
 
@@ -107,7 +107,7 @@ libcuda-rbc:
 libcuda-ctc:
 	$(MAKE) -C ../cuda-ctc/ libcuda-ctc.a CXX="$(CXX)" NVCC="$(NVCC)" ARCH_VAL="$(ARCH_VAL)" CODE_VAL="$(CODE_VAL)" NVCCFLAGS="$(NVCCFLAGS)"
 
-migratable-test: migratable-test.o migration.o
+migratable-test: migratable-test.o
 	$(AMPICXX) $(CXXFLAGS) $+ -lcudart -o $@
 
 
