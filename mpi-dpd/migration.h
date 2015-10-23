@@ -7,15 +7,24 @@
 
 #include "common.h"
 
+class AnyMigratable
+{
+public:
+    virtual void malloc_migratable(void** ptr, int size) = 0;
+    virtual void malloc_migratable_host(void** ptr, int size) = 0;
+    virtual void malloc_migratable_device(void** ptr, int size) = 0;
+    virtual void malloc_migratable_pinned(void** ptr, int size) = 0;
+    virtual void free_migratable(void* ptr) = 0;
+};
+
 template <int B>
-class Migratable
+class Migratable : public AnyMigratable
 {
 public:
     enum {
         MAX_BUFFERS = B
     };
 
-protected:
     Migratable();
 
     void malloc_migratable(void** ptr, int size);
