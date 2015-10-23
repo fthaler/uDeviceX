@@ -31,7 +31,7 @@ bool Acceleration::initialized = false;
 MPI_Datatype Acceleration::mytype;
 */
 
-void CellLists::build(Particle * const p, const int n, cudaStream_t stream, int * const order, const Particle * const src)
+void CellListsBase::build(Particle * const p, const int n, cudaStream_t stream, int * const order, const Particle * const src)
 {
     NVTX_RANGE("Cells-build", NVTX_C1)
 

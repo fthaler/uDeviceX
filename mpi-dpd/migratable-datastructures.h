@@ -131,3 +131,20 @@ protected:
         memset(ptr, 0, count * sizeof(T));
     }
 };
+
+class MigratableCellLists : public Migratable, public CellListsBase
+{
+public:
+    MigratableCellLists(Globals* globals, const int LX, const int LY, const int LZ)
+        : CellListsBase(globals, LX, LY, LZ)
+    {
+        malloc_migratable_device((void**) &start, sizeof(int) * ncells);
+        malloc_migratable_device((void**) &count, sizeof(int) * ncells);
+    }
+
+    ~MigratableCellLists()
+    {
+        free_migratable(start);
+        free_migratable(count);
+    }
+};

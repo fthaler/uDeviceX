@@ -412,7 +412,8 @@ PinnedHostBuffer(int n = 0): capacity(0), size(0), data(NULL), devptr(NULL) { re
 //the start[cell-id] array gives the entry in the particle array associated to first particle belonging to cell-id
 //count[cell-id] tells how many particles are inside cell-id.
 //building the cell lists involve a reordering of the particle array (!)
-struct CellLists
+//the base class performs no allocation/deallocation
+struct CellListsBase
 {
     // global variable pointer for AMPI
     Globals* globals;
@@ -420,14 +421,21 @@ struct CellLists
 
     int * start, * count;
 
-CellLists(Globals* globals, const int LX, const int LY, const int LZ):
-    globals(globals), ncells(LX * LY * LZ + 1), LX(LX), LY(LY), LZ(LZ)
+    void build(Particle * const p, const int n, cudaStream_t stream,
+               int * const order = NULL, const Particle * const src = NULL);
+protected:
+    CellListsBase(Globals* globals, const int LX, const int LY, const int LZ)
+        : globals(globals), ncells(LX * LY * LZ + 1), LX(LX), LY(LY), LZ(LZ) {}
+};
+
+struct CellLists : CellListsBase
+{
+    CellLists(Globals* globals, const int LX, const int LY, const int LZ)
+        : CellListsBase(globals, LX, LY, LZ)
 	{
 	    CUDA_CHECK(cudaMalloc(&start, sizeof(int) * ncells));
 	    CUDA_CHECK(cudaMalloc(&count, sizeof(int) * ncells));
 	}
-
-    void build(Particle * const p, const int n, cudaStream_t stream, int * const order = NULL, const Particle * const src = NULL);
 
     ~CellLists()
 	{
