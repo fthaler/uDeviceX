@@ -44,7 +44,7 @@ class Simulation : public GlobalsInjector
     MigratableDeviceBuffer<float4> xyzouvwo;
     MigratableDeviceBuffer<ushort4> xyzo_half;
     
-    CellLists cells;
+    MigratableCellLists cells;
     CollectionRBC * rbcscoll;
     CollectionCTC * ctcscoll;
     
