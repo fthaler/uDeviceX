@@ -79,6 +79,33 @@ protected:
 };
 
 template <typename T>
+class MigratableBuffer : public MigratableBufferBase<T>, public Migratable<2>
+{
+public:
+    MigratableBuffer(int n = 0) : MigratableBufferBase<T>(n) {}
+protected:
+    void allocate_elements(T** ptr, int count)
+    {
+        malloc_migratable((void**) ptr, count * sizeof(T));
+    }
+
+    void copy_elements(T* dst, T* src, int count)
+    {
+        memcpy(dst, src, count * sizeof(T));
+    }
+
+    void set_zero(T* ptr, int count)
+    {
+        memset(ptr, 0, count * sizeof(T));
+    }
+
+    void free_elements(T* ptr)
+    {
+        free_migratable(ptr);
+    }
+};
+
+template <typename T>
 class MigratableDeviceBuffer : public MigratableBufferBase<T>, public Migratable<2>
 {
 public:
@@ -166,6 +193,38 @@ protected:
             devptr = NULL;
         else
             CUDA_CHECK(cudaHostGetDevicePointer(&devptr, MigratableBufferBase<T>::data, 0));
+    }
+};
+
+template <typename T>
+class MigratableBuffer2 : public MigratableBufferBase<T>
+{
+public:
+    AnyMigratable* migratable;
+
+    MigratableBuffer2(AnyMigratable* migratable = NULL, int n = 0):
+        MigratableBufferBase<T>(n), migratable(migratable) {}
+protected:
+    void allocate_elements(T** ptr, int count)
+    {
+        assert(migratable);
+        migratable->malloc_migratable((void**) ptr, count * sizeof(T));
+    }
+
+    void copy_elements(T* dst, T* src, int count)
+    {
+        memcpy(dst, src, count * sizeof(T));
+    }
+
+    void set_zero(T* ptr, int count)
+    {
+        memset(ptr, 0, count * sizeof(T));
+    }
+
+    void free_elements(T* ptr)
+    {
+        assert(migratable);
+        migratable->free_migratable(ptr);
     }
 };
 
