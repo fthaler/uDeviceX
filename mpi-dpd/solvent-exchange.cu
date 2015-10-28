@@ -322,25 +322,11 @@ using namespace std;
 
 SolventExchange::SolventExchange(Globals* globals, MPI_Comm _cartcomm, const int basetag):  GlobalsInjector(globals), ncells(0), basetag(basetag), firstpost(true), nactive(26)
 {
-    malloc_migratable_device((void**) &cellpackstarts, sizeof(int) * 27);
-    malloc_migratable_device((void**) &cellpacks, sizeof(PackingHalo::CellPackSOA) * 26);
-    malloc_migratable_device((void**) &srccells, sizeof(int*) * 26 * 2);
-    malloc_migratable_device((void**) &dstcells, sizeof(int*) * 26 * 2);
-    malloc_migratable_device((void**) &baginfos, sizeof(PackingHalo::SendBagInfo) * 26);
-    for (int i = 0; i < 26; ++i) {
-        sendhalos[i].scattered_entries.migratable = this;
-        sendhalos[i].tmpstart.migratable = this;
-        sendhalos[i].tmpcount.migratable = this;
-        sendhalos[i].dcellstarts.migratable = this;
-        sendhalos[i].dbuf.migratable = this;
-        sendhalos[i].hcellstarts.migratable = this;
-        sendhalos[i].hbuf.migratable = this;
-
-        recvhalos[i].hcellstarts.migratable = this;
-        recvhalos[i].hbuf.migratable = this;
-        recvhalos[i].dbuf.migratable = this;
-        recvhalos[i].dcellstarts.migratable = this;
-    }
+    CUDA_CHECK(cudaMalloc(&cellpackstarts, sizeof(int) * 27));
+    CUDA_CHECK(cudaMalloc(&cellpacks, sizeof(PackingHalo::CellPackSOA) * 26));
+    CUDA_CHECK(cudaMalloc(&srccells, sizeof(int*) * 26 * 2));
+    CUDA_CHECK(cudaMalloc(&dstcells, sizeof(int*) * 26 * 2));
+    CUDA_CHECK(cudaMalloc(&baginfos, sizeof(PackingHalo::SendBagInfo) * 26));
 
     safety_factor = getenv("HEX_COMM_FACTOR") ? atof(getenv("HEX_COMM_FACTOR")) : 1.2;
 
@@ -785,9 +771,9 @@ SolventExchange::~SolventExchange()
 
     CUDA_CHECK(cudaEventDestroy(evfillall));
     CUDA_CHECK(cudaEventDestroy(evdownloaded));
-    free_migratable(cellpackstarts);
-    free_migratable(cellpacks);
-    free_migratable(srccells);
-    free_migratable(dstcells);
-    free_migratable(baginfos);
+    CUDA_CHECK(cudaFree(cellpackstarts));
+    CUDA_CHECK(cudaFree(cellpacks));
+    CUDA_CHECK(cudaFree(srccells));
+    CUDA_CHECK(cudaFree(dstcells));
+    CUDA_CHECK(cudaFree(baginfos));
 }

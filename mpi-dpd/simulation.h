@@ -52,10 +52,10 @@ class Simulation : public GlobalsInjector
     RedistributeRBCs redistribute_rbcs;
     RedistributeCTCs redistribute_ctcs;
     
-    ComputeDPD dpd;
-    SoluteExchange solutex;
-    ComputeFSI fsi;
-    ComputeContact contact;
+    ComputeDPD * dpd;
+    SoluteExchange * solutex;
+    ComputeFSI * fsi;
+    ComputeContact * contact;
 
     ComputeWall * wall;
 
@@ -85,6 +85,9 @@ class Simulation : public GlobalsInjector
     void _datadump(const int idtimestep);
     void _update_and_bounce();
     void _lockstep();
+    void _pre_migrate();
+    void _post_migrate();
+    void _migrate();
 
     double report_t0_a, report_t0_b;
     pthread_t thread_datadump;

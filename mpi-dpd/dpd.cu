@@ -269,8 +269,8 @@ using namespace std;
 
 ComputeDPD::ComputeDPD(Globals* globals, MPI_Comm cartcomm): SolventExchange(globals, cartcomm, 0), local_trunk(0, 0, 0, 0)
 {
-    malloc_migratable_device((void**) &start, sizeof(unsigned) * 27);
-    malloc_migratable_device((void**) &batchinfos, sizeof(BipsBatch::BatchInfo) * 26);
+    CUDA_CHECK(cudaMalloc(&start, sizeof(unsigned) * 27));
+    CUDA_CHECK(cudaMalloc(&batchinfos, sizeof(BipsBatch::BatchInfo) * 26));
 
     int myrank;
     MPI_CHECK(MPI_Comm_rank(cartcomm, &myrank));
@@ -325,8 +325,8 @@ ComputeDPD::ComputeDPD(Globals* globals, MPI_Comm cartcomm): SolventExchange(glo
 
 ComputeDPD::~ComputeDPD()
 {
-    free_migratable(start);
-    free_migratable(batchinfos);
+    CUDA_CHECK(cudaFree(start));
+    CUDA_CHECK(cudaFree(batchinfos));
 }
 
 void ComputeDPD::local_interactions(const Particle * const xyzuvw, const float4 * const xyzouvwo, const ushort4 * const xyzo_half,
