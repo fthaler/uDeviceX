@@ -17,7 +17,7 @@
 #include "common.h"
 #include "migration.h"
 
-class RedistributeParticles : public Migratable<100>
+class RedistributeParticles : public Migratable<100, 3>
 {
     static const int basetag = 950;
     
@@ -56,12 +56,14 @@ public:
     int pack_size(const int code) { return send_sizes[code]; }
    
     float pinned_data(const int code, const int entry) { return pinnedhost_sendbufs[code][entry]; }
-   
+
+    void set_lastcall() { assert(!firstcall); lastcall = true; }
+
 private:
     // moved globals from redistribute-particles.cu
     int ntexparticles;
     float2* texparticledata;
-    cudaTextureObject_t texAllParticles, texAllParticlesFloat2;
+    cudaTextureObject_t texAllParticlesFloat2;
     PackBuffer* pack_buffers;
     UnpackBuffer* unpack_buffers;
     int* pack_count, *pack_start_padded;
@@ -71,6 +73,7 @@ private:
     MPI_Comm cartcomm;
 
     bool firstcall;
+    bool lastcall;
     
     int dims[3], periods[3], coords[3], neighbor_ranks[27], recv_tags[27],
 	default_message_sizes[27], send_sizes[27], recv_sizes[27],

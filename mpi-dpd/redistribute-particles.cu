@@ -438,8 +438,8 @@ namespace RedistributeParticlesKernels
 }
 
 RedistributeParticles::RedistributeParticles(MPI_Comm _cartcomm):
-texAllParticles(0), texAllParticlesFloat2(0),
-failure(1), packsizes(27), nactiveneighbors(26), firstcall(true),
+texAllParticlesFloat2(0),
+failure(1), packsizes(27), nactiveneighbors(26), firstcall(true), lastcall(false),
 compressed_cellcounts(XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN),
 subindices(1.5 * numberdensity * XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN),
 subindices_remote(1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN -
@@ -521,9 +521,9 @@ subindices_remote(1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSI
     RedistributeParticlesKernels::texAllParticlesFloat2.mipmapFilterMode = cudaFilterModePoint;
     RedistributeParticlesKernels::texAllParticlesFloat2.normalized = 0;*/
 
-    CUDA_CHECK(cudaEventCreate(&evpacking, cudaEventDisableTiming));
-    CUDA_CHECK(cudaEventCreate(&evsizes, cudaEventDisableTiming));
-    //CUDA_CHECK(cudaEventCreate(&evcompaction, cudaEventDisableTiming));
+    create_migratable_event(&evpacking, cudaEventDisableTiming);
+    create_migratable_event(&evsizes, cudaEventDisableTiming);
+    //create_migratable_event(&evcompaction, cudaEventDisableTiming);
 
 CUDA_CHECK( cudaFuncSetCacheConfig( RedistributeParticlesKernels::gather_particles, cudaFuncCachePreferL1 ) );
 }
@@ -629,10 +629,8 @@ void RedistributeParticles::pack(const Particle * const particles, const int npa
 	_post_recv();
 
     //size_t textureoffset;
+    cudaTextureObject_t texAllParticles = 0;
     if (nparticles) {
-        if (texAllParticles != 0)
-            CUDA_CHECK(cudaDestroyTextureObject(texAllParticles));
-
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
         resDesc.resType = cudaResourceTypeLinear;
@@ -652,10 +650,9 @@ void RedistributeParticles::pack(const Particle * const particles, const int npa
 			       sizeof(float) * 6 * nparticles));*/
     }
 
+    //cudaTextureObject_t texAllParticlesFloat2 = 0;
+    assert(texAllParticlesFloat2 == 0);
     if (nparticles) {
-        if (texAllParticlesFloat2 != 0)
-            CUDA_CHECK(cudaDestroyTextureObject(texAllParticlesFloat2));
-
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
         resDesc.resType = cudaResourceTypeLinear;
@@ -729,6 +726,9 @@ pack_attempt:
 
 	goto pack_attempt;
     }
+
+    if (nparticles)
+        CUDA_CHECK(cudaDestroyTextureObject(texAllParticles));
 
     CUDA_CHECK(cudaPeekAtLastError());
 }
@@ -937,13 +937,27 @@ void RedistributeParticles::recv_unpack(Particle * const particles, float4 * con
 	(texAllParticlesFloat2, scattered_indices.data, (float2 *)remote_particles.data, nhalo,
 	 ntexparticles, nparticles, (float2 *)particles, xyzouvwo, xyzo_half);
 
+    if (nparticles) {
+        CUDA_CHECK(cudaDestroyTextureObject(texAllParticlesFloat2));
+        texAllParticlesFloat2 = 0;
+    }
+
     CUDA_CHECK(cudaPeekAtLastError());
 
 #ifndef NDEBUG
     RedistributeParticlesKernels::check<<<(XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN + 127) / 128, 128, 0, mystream>>>(cellstarts, cellcounts, particles, nparticles);
 #endif
 
-    _post_recv();
+    if (lastcall) {
+        assert(!firstcall);
+        printf("waiting lastcall\n");
+        _waitall(sendcountreq, nactiveneighbors);
+        _waitall(sendmsgreq, nsendmsgreq);
+        lastcall = false;
+        firstcall = true;
+    } else {
+        _post_recv();
+    }
 
     CUDA_CHECK(cudaPeekAtLastError());
 }
@@ -988,8 +1002,8 @@ void RedistributeParticles::adjust_message_sizes(ExpectedMessageSizes sizes)
 
 RedistributeParticles::~RedistributeParticles()
 {
-    CUDA_CHECK(cudaEventDestroy(evpacking));
-    CUDA_CHECK(cudaEventDestroy(evsizes));
+    destroy_migratable_event(evpacking);
+    destroy_migratable_event(evsizes);
 
     _cancel_recv();
 
