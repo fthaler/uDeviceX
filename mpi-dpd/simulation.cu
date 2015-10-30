@@ -200,9 +200,9 @@ void Simulation::_report(const bool verbose, const int idtimestep)
 	    printf("\x1b[92mbeginning of time step %d (%.3f ms)\x1b[0m\n", idtimestep, (t1 - report_t0_b) * 1e3 / globals->steps_per_report);
 	    printf("in more details, per time step:\n");
 	    double tt = 0;
-	    for(std::map<string, double>::iterator it = timings.begin(); it != timings.end(); ++it)
+	    for(TimingsMap::iterator it = timings.begin(); it != timings.end(); ++it)
 	    {
-		printf("%s: %.3f ms\n", it->first.c_str(), it->second * 1e3 / globals->steps_per_report);
+		printf("%s: %.3f ms\n", it->first, it->second * 1e3 / globals->steps_per_report);
 		tt += it->second;
 		it->second = 0;
 	    }

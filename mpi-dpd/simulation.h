@@ -36,6 +36,7 @@
 #include "ctc.h"
 #include "io.h"
 #include "migratable-datastructures.h"
+#include "stack-allocator.h"
 
 class Simulation : public GlobalsInjector
 {
@@ -67,7 +68,9 @@ class Simulation : public GlobalsInjector
 
     cudaStream_t mainstream, uploadstream, downloadstream;
     
-    std::map<std::string, double> timings;
+    typedef StackAllocator<std::pair<const char*, double>, 20> TimingsAllocator;
+    typedef std::map<const char*, double, std::less<const char*>, TimingsAllocator> TimingsMap;
+    TimingsMap timings;
 
     const size_t nsteps;
     float driving_acceleration;
