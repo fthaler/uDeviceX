@@ -21,7 +21,6 @@ public:
 	{
         free_elements(data);
 	    data = NULL;
-        update();
 	}
 
     void resize(const int n)
@@ -43,7 +42,6 @@ public:
 #ifndef NDEBUG
         set_zero(data, capacity);
 #endif
-        update();
 	}
 
     void preserve_resize(const int n)
@@ -68,14 +66,12 @@ public:
             copy_elements(data, old, oldsize);
             free_elements(old);
 	    }
-        update();
 	}
 protected:
     virtual void allocate_elements(T** ptr, int count) = 0;
     virtual void copy_elements(T* dst, T* src, int count) = 0;
     virtual void set_zero(T* ptr, int count) = 0;
     virtual void free_elements(T* ptr) = 0;
-    virtual void update() {}
 };
 
 template <typename T>
@@ -163,8 +159,6 @@ template <typename T>
 class MigratablePinnedBuffer : public MigratableBufferBase<T>, public Migratable<2>
 {
 public:
-    T* devptr;
-
     MigratablePinnedBuffer(int n = 0) : MigratableBufferBase<T>(n) {}
 protected:
     void allocate_elements(T** ptr, int count)
@@ -187,12 +181,13 @@ protected:
         free_migratable(ptr);
     }
 
-    void update()
+    T* devptr()
     {
         if (MigratableBufferBase<T>::data == NULL)
-            devptr = NULL;
-        else
-            CUDA_CHECK(cudaHostGetDevicePointer(&devptr, MigratableBufferBase<T>::data, 0));
+            return NULL;
+        T* ptr;
+        CUDA_CHECK(cudaHostGetDevicePointer(&ptr, MigratableBufferBase<T>::data, 0));
+        return ptr;
     }
 };
 
@@ -297,7 +292,6 @@ class MigratablePinnedBuffer2 : public MigratableBufferBase<T>
 {
 public:
     AnyMigratable* migratable;
-    T* devptr;
 
     MigratablePinnedBuffer2(AnyMigratable* migratable = NULL, int n = 0):
         MigratableBufferBase<T>(n), migratable(migratable) {}
@@ -324,12 +318,13 @@ protected:
         migratable->free_migratable(ptr);
     }
 
-    void update()
+    T* devptr()
     {
         if (MigratableBufferBase<T>::data == NULL)
-            devptr = NULL;
-        else
-            CUDA_CHECK(cudaHostGetDevicePointer(&devptr, MigratableBufferBase<T>::data, 0));
+            return NULL;
+        T* ptr;
+        CUDA_CHECK(cudaHostGetDevicePointer(&ptr, MigratableBufferBase<T>::data, 0));
+        return ptr;
     }
 };
 
