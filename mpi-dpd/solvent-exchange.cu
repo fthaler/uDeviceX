@@ -320,7 +320,7 @@ namespace PackingHalo
 
 using namespace std;
 
-SolventExchange::SolventExchange(Globals* globals, MPI_Comm _cartcomm, const int basetag):  GlobalsInjector(globals), ncells(0), basetag(basetag), firstpost(true), nactive(26)
+SolventExchange::SolventExchange(Globals* globals, MPI_Comm _cartcomm, const int basetag):  GlobalsInjector(globals), ncells(0), basetag(basetag), firstpost(true), lastpost(false), nactive(26)
 {
     CUDA_CHECK(cudaMalloc(&cellpackstarts, sizeof(int) * 27));
     CUDA_CHECK(cudaMalloc(&cellpacks, sizeof(PackingHalo::CellPackSOA) * 26));
@@ -700,7 +700,16 @@ void SolventExchange::recv(cudaStream_t stream, cudaStream_t uploadstream)
 
     CUDA_CHECK(cudaPeekAtLastError());
 
-    post_expected_recv();
+    if (lastpost) {
+        assert(!firstpost);
+        MPI_Status statuses[26 * 2];
+        MPI_CHECK( MPI_Waitall(nactive, sendcellsreq, statuses) );
+        MPI_CHECK( MPI_Waitall(nsendreq, sendreq, statuses) );
+        MPI_CHECK( MPI_Waitall(nactive, sendcountreq, statuses) );
+        lastpost = false;
+        firstpost = true;
+    } else
+        post_expected_recv();
 }
 
 int SolventExchange::nof_sent_particles()

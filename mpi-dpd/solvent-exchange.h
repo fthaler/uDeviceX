@@ -34,6 +34,7 @@ class SolventExchange : public GlobalsInjector
     int recv_tags[26], recv_counts[26], nlocal, nactive;
 
     bool firstpost;
+    bool lastpost;
     
 protected:
     
@@ -126,4 +127,6 @@ public:
     void adjust_message_sizes(ExpectedMessageSizes sizes);
 
     virtual ~SolventExchange();
+
+    void set_lastpost() { assert(!firstpost); lastpost = true; }
 };
