@@ -718,10 +718,6 @@ Simulation::Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm,
 	_update_helper_arrays();
     }
 
-    CUDA_CHECK(cudaStreamCreate(&mainstream));
-    CUDA_CHECK(cudaStreamCreate(&uploadstream));
-    CUDA_CHECK(cudaStreamCreate(&downloadstream));
-
     if (globals->rbcs)
     {
 	rbcscoll = new CollectionRBC(globals, cartcomm);
@@ -944,6 +940,10 @@ void Simulation::_pre_migrate()
     if (contact)
         delete contact;
     contact = NULL;
+
+    CUDA_CHECK(cudaStreamDestroy(mainstream));
+    CUDA_CHECK(cudaStreamDestroy(uploadstream));
+    CUDA_CHECK(cudaStreamDestroy(downloadstream));
 }
 
 void Simulation::_post_migrate()
@@ -956,11 +956,16 @@ void Simulation::_post_migrate()
     solutex->attach_halocomputation(*fsi);
     if (globals->contactforces)
         solutex->attach_halocomputation(*contact);
+
+    CUDA_CHECK(cudaStreamCreate(&mainstream));
+    CUDA_CHECK(cudaStreamCreate(&uploadstream));
+    CUDA_CHECK(cudaStreamCreate(&downloadstream));
 }
 
 void Simulation::_migrate()
 {
 #ifdef AMPI
+    MPI_Barrier(MPI_COMM_WORLD);
     printf("start migration\n");
     _pre_migrate();
     MPI_Barrier(MPI_COMM_WORLD);
@@ -968,6 +973,7 @@ void Simulation::_migrate()
     MPI_Barrier(MPI_COMM_WORLD);
     _post_migrate();
     printf("migration done\n");
+    MPI_Barrier(MPI_COMM_WORLD);
 #endif
 }
 
@@ -1028,7 +1034,8 @@ void Simulation::run()
 
 	    _report(verbose, it);
 
-        _migrate();
+        redistribute.set_lastcall();
+        dpd->set_lastpost();
 	}
 
 	_redistribute();
@@ -1083,6 +1090,10 @@ void Simulation::run()
 	    _datadump(it);
 #endif
 	_update_and_bounce();
+
+	if (it % globals->steps_per_report == 0) {
+        _migrate();
+    }
     }
 
     const double time_simulation_stop = MPI_Wtime();
