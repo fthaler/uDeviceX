@@ -15,14 +15,19 @@ public:
     virtual void malloc_migratable_device(void** ptr, int size) = 0;
     virtual void malloc_migratable_pinned(void** ptr, int size) = 0;
     virtual void free_migratable(void* ptr) = 0;
+    virtual void create_migratable_event(cudaEvent_t* event, unsigned flags = 0) = 0;
+    virtual void destroy_migratable_event(cudaEvent_t event) = 0;
 };
 
-template <int B>
+template <int B, int E = 0>
 class Migratable : public AnyMigratable
 {
 public:
     enum {
         MAX_BUFFERS = B
+    };
+    enum {
+        MAX_EVENTS = E
     };
 
     Migratable();
@@ -32,6 +37,8 @@ public:
     void malloc_migratable_device(void** ptr, int size);
     void malloc_migratable_pinned(void** ptr, int size);
     void free_migratable(void* ptr);
+    void create_migratable_event(cudaEvent_t* event, unsigned flags = 0);
+    void destroy_migratable_event(cudaEvent_t event);
 
 private:
     struct Buffer
@@ -51,6 +58,20 @@ private:
         Status status;
     };
 
+    struct Event
+    {
+        enum Status
+        {
+            INACTIVE = 0,
+            ACTIVE
+        };
+
+        cudaEvent_t event;
+        unsigned flags;
+        int offset;
+        Status status;
+    };
+
     static void pup(pup_er p, void *d);
 
     Buffer& get_inactive_buffer()
@@ -60,6 +81,15 @@ private:
                 return buffers[i];
         assert(false);
         return buffers[0];
+    }
+
+    Event& get_inactive_event()
+    {
+        for (int i = 0; i < MAX_EVENTS; ++i)
+            if (events[i].status == Event::INACTIVE)
+                return events[i];
+        assert(false);
+        return events[0];
     }
 
     void allocate_inactive_buffer(void** ptr, int size, typename Buffer::Status status)
@@ -81,10 +111,11 @@ private:
     static void free(void* ptr, typename Buffer::Status status);
 
     Buffer buffers[MAX_BUFFERS];
+    Event events[MAX_EVENTS];
 };
 
-template <int B>
-Migratable<B>::Migratable()
+template <int B, int E>
+Migratable<B, E>::Migratable()
 {
     memset(buffers, 0, sizeof(buffers));
 #ifdef AMPI
@@ -92,32 +123,32 @@ Migratable<B>::Migratable()
 #endif
 }
 
-template <int B>
-void Migratable<B>::malloc_migratable(void** ptr, int size)
+template <int B, int E>
+void Migratable<B, E>::malloc_migratable(void** ptr, int size)
 {
     allocate_inactive_buffer(ptr, size, Buffer::MALLOCED);
 }
 
-template <int B>
-void Migratable<B>::malloc_migratable_device(void** ptr, int size)
+template <int B, int E>
+void Migratable<B, E>::malloc_migratable_device(void** ptr, int size)
 {
     allocate_inactive_buffer(ptr, size, Buffer::CUDA_DEVICE);
 }
 
-template <int B>
-void Migratable<B>::malloc_migratable_host(void** ptr, int size)
+template <int B, int E>
+void Migratable<B, E>::malloc_migratable_host(void** ptr, int size)
 {
     allocate_inactive_buffer(ptr, size, Buffer::CUDA_HOST);
 }
 
-template <int B>
-void Migratable<B>::malloc_migratable_pinned(void** ptr, int size)
+template <int B, int E>
+void Migratable<B, E>::malloc_migratable_pinned(void** ptr, int size)
 {
     allocate_inactive_buffer(ptr, size, Buffer::CUDA_PINNED);
 }
 
-template <int B>
-void Migratable<B>::free_migratable(void* ptr)
+template <int B, int E>
+void Migratable<B, E>::free_migratable(void* ptr)
 {
     if (ptr == NULL)
         return;
@@ -129,10 +160,36 @@ void Migratable<B>::free_migratable(void* ptr)
             return;
         }
     }
+    assert(false);
 }
 
-template <int B>
-void Migratable<B>::pup(pup_er p, void *d)
+template <int B, int E>
+void Migratable<B, E>::create_migratable_event(cudaEvent_t* event, unsigned flags)
+{
+    Event& e = get_inactive_event();
+    CUDA_CHECK(cudaEventCreateWithFlags(event, flags));
+    e.event = *event;
+    e.flags = flags;
+    e.offset = get_ptr_offset((void**) event);
+    e.status = Event::ACTIVE;
+}
+
+template <int B, int E>
+void Migratable<B, E>::destroy_migratable_event(cudaEvent_t event)
+{
+    for (int i = 0; i < MAX_EVENTS; ++i) {
+        Event& e = events[i];
+        if (e.status == Event::ACTIVE && e.event == event) {
+            CUDA_CHECK(cudaEventDestroy(event));
+            e.status = Event::INACTIVE;
+            return;
+        }
+    }
+    assert(false);
+}
+
+template <int B, int E>
+void Migratable<B, E>::pup(pup_er p, void *d)
 {
     Migratable* m = (Migratable*) d;
 
@@ -157,6 +214,12 @@ void Migratable<B>::pup(pup_er p, void *d)
                 b.ptr = newPtr;
             }
         }
+
+        for (int i = 0; i < MAX_EVENTS; ++i) {
+            Event& e = m->events[i];
+            if (e.status == Event::ACTIVE)
+                CUDA_CHECK(cudaEventDestroy(e.event));
+        }
     }
     for (int i = 0; i < MAX_BUFFERS; ++i) {
         Buffer& b = m->buffers[i];
@@ -178,6 +241,15 @@ void Migratable<B>::pup(pup_er p, void *d)
                 *memberPtr = b.ptr;
             }
         }
+
+        for (int i = 0; i < MAX_EVENTS; ++i) {
+            Event& e = m->events[i];
+            if (e.status == Event::ACTIVE) {
+                CUDA_CHECK(cudaEventCreateWithFlags(&e.event, e.flags));
+                cudaEvent_t* memberPtr = (cudaEvent_t*) ((ptrdiff_t) m + e.offset);
+                *memberPtr = e.event;
+            }
+        }
     }
     if (pup_isPacking(p))
     {
@@ -192,8 +264,8 @@ void Migratable<B>::pup(pup_er p, void *d)
     }
 }
 
-template <int B>
-void Migratable<B>::allocate(void** ptr, int size, typename Buffer::Status status)
+template <int B, int E>
+void Migratable<B, E>::allocate(void** ptr, int size, typename Buffer::Status status)
 {
     switch (status) {
     case Buffer::INACTIVE:
@@ -214,8 +286,8 @@ void Migratable<B>::allocate(void** ptr, int size, typename Buffer::Status statu
     }
 }
 
-template <int B>
-void Migratable<B>::free(void* ptr, typename Buffer::Status status)
+template <int B, int E>
+void Migratable<B, E>::free(void* ptr, typename Buffer::Status status)
 {
     if (ptr == NULL)
         return;
