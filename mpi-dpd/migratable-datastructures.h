@@ -3,14 +3,18 @@
 #include "common.h"
 #include "migration.h"
 
-template <typename T>
+template <typename T, typename Derived>
 class MigratableBufferBase
 {
 public:
     int capacity, size;
     T * data;
 
-    MigratableBufferBase(int n = 0): capacity(0), size(0), data(NULL) { resize(n);}
+    MigratableBufferBase(int n = 0, bool noresize = false): capacity(0), size(0), data(NULL)
+    {
+        if (!noresize)
+            resize(n);
+    }
 
     virtual ~MigratableBufferBase()
 	{
@@ -68,262 +72,298 @@ public:
 	    }
 	}
 protected:
-    virtual void allocate_elements(T** ptr, int count) = 0;
-    virtual void copy_elements(T* dst, T* src, int count) = 0;
-    virtual void set_zero(T* ptr, int count) = 0;
-    virtual void free_elements(T* ptr) = 0;
-};
-
-template <typename T>
-class MigratableBuffer : public MigratableBufferBase<T>, public Migratable<2>
-{
-public:
-    MigratableBuffer(int n = 0) : MigratableBufferBase<T>(n) {}
-protected:
     void allocate_elements(T** ptr, int count)
     {
-        malloc_migratable((void**) ptr, count * sizeof(T));
+        static_cast<Derived*>(this)->allocate_elements_d(ptr, count);
+    }
+    void copy_elements(T* dst, T* src, int count)
+    {
+        static_cast<Derived*>(this)->copy_elements_d(dst, src, count);
+    }
+    void set_zero(T* ptr, int count)
+    {
+        static_cast<Derived*>(this)->set_zero_d(ptr, count);
+    }
+    void free_elements(T* ptr)
+    {
+        static_cast<Derived*>(this)->free_elements_d(ptr);
+    }
+};
+
+template <typename T, typename Derived>
+class MigratableBufferBase2 : public MigratableBufferBase<T, Derived>
+{
+public:
+    MigratableBufferBase2(AnyMigratable* migratable, int n = 0)
+        : MigratableBufferBase<T, Derived>(n, true),
+        migratable_ptr_offset((int) ((ptrdiff_t) migratable - (ptrdiff_t) this)) {
+            assert(migratable != NULL);
+            MigratableBufferBase<T, Derived>::resize(n);
+        }
+    virtual ~MigratableBufferBase2() {}
+protected:
+    AnyMigratable* get_migratable() {
+        AnyMigratable* migratable = (AnyMigratable*) ((ptrdiff_t) this + migratable_ptr_offset);
+        assert(migratable != NULL);
+        return migratable;
+    }
+private:
+    int migratable_ptr_offset;
+};
+
+
+template <typename T>
+class MigratableBuffer
+    : public MigratableBufferBase<T, MigratableBuffer<T> >, public Migratable<2>
+{
+public:
+    MigratableBuffer(int n = 0)
+        : MigratableBufferBase<T, MigratableBuffer<T> >(n) {}
+
+    void allocate_elements_d(T** ptr, int count)
+    {
+        Migratable<2>::malloc_migratable((void**) ptr, count * sizeof(T));
     }
 
-    void copy_elements(T* dst, T* src, int count)
+    void copy_elements_d(T* dst, T* src, int count)
     {
         memcpy(dst, src, count * sizeof(T));
     }
 
-    void set_zero(T* ptr, int count)
+    void set_zero_d(T* ptr, int count)
     {
         memset(ptr, 0, count * sizeof(T));
     }
 
-    void free_elements(T* ptr)
+    void free_elements_d(T* ptr)
     {
-        free_migratable(ptr);
+        Migratable<2>::free_migratable(ptr);
     }
 };
 
 template <typename T>
-class MigratableDeviceBuffer : public MigratableBufferBase<T>, public Migratable<2>
+class MigratableDeviceBuffer
+    : public MigratableBufferBase<T, MigratableDeviceBuffer<T> >, public Migratable<2>
 {
 public:
-    MigratableDeviceBuffer(int n = 0) : MigratableBufferBase<T>(n) {}
-protected:
-    void allocate_elements(T** ptr, int count)
+    MigratableDeviceBuffer(int n = 0)
+        : MigratableBufferBase<T, MigratableDeviceBuffer<T> >(n) {}
+
+    void allocate_elements_d(T** ptr, int count)
     {
-        malloc_migratable_device((void**) ptr, count * sizeof(T));
+        Migratable<2>::malloc_migratable_device((void**) ptr, count * sizeof(T));
     }
 
-    void copy_elements(T* dst, T* src, int count)
+    void copy_elements_d(T* dst, T* src, int count)
     {
         CUDA_CHECK(cudaMemcpy(dst, src, count * sizeof(T), cudaMemcpyDeviceToDevice));
     }
 
-    void set_zero(T* ptr, int count)
+    void set_zero_d(T* ptr, int count)
     {
         CUDA_CHECK(cudaMemset(ptr, 0, count * sizeof(T)));
     }
 
-    void free_elements(T* ptr)
+    void free_elements_d(T* ptr)
     {
-        free_migratable(ptr);
+        Migratable<2>::free_migratable(ptr);
     }
 };
 
 template <typename T>
-class MigratableHostBuffer : public MigratableBufferBase<T>, public Migratable<2>
+class MigratableHostBuffer
+    : public MigratableBufferBase<T, MigratableHostBuffer<T> >, public Migratable<2>
 {
 public:
-    MigratableHostBuffer(int n = 0) : MigratableBufferBase<T>(n) {}
-protected:
-    void allocate_elements(T** ptr, int count)
+    MigratableHostBuffer(int n = 0)
+        : MigratableBufferBase<T, MigratableHostBuffer<T> >(n) {}
+
+    void allocate_elements_d(T** ptr, int count)
     {
-        malloc_migratable_host((void**) ptr, count * sizeof(T));
+        Migratable<2>::malloc_migratable_host((void**) ptr, count * sizeof(T));
     }
 
-    void copy_elements(T* dst, T* src, int count)
+    void copy_elements_d(T* dst, T* src, int count)
     {
         memcpy(dst, src, count * sizeof(T));
     }
 
-    void set_zero(T* ptr, int count)
+    void set_zero_d(T* ptr, int count)
     {
         memset(ptr, 0, count * sizeof(T));
     }
 
-    void free_elements(T* ptr)
+    void free_elements_d(T* ptr)
     {
-        free_migratable(ptr);
+        Migratable<2>::free_migratable(ptr);
     }
 };
 
 template <typename T>
-class MigratablePinnedBuffer : public MigratableBufferBase<T>, public Migratable<2>
+class MigratablePinnedBuffer
+    : public MigratableBufferBase<T, MigratablePinnedBuffer<T> >, public Migratable<2>
 {
 public:
-    MigratablePinnedBuffer(int n = 0) : MigratableBufferBase<T>(n) {}
-protected:
-    void allocate_elements(T** ptr, int count)
+    MigratablePinnedBuffer(int n = 0)
+        : MigratableBufferBase<T, MigratablePinnedBuffer<T> >(n) {}
+
+    void allocate_elements_d(T** ptr, int count)
     {
-        malloc_migratable_pinned((void**) ptr, count * sizeof(T));
+        Migratable<2>::malloc_migratable_pinned((void**) ptr, count * sizeof(T));
     }
 
-    void copy_elements(T* dst, T* src, int count)
+    void copy_elements_d(T* dst, T* src, int count)
     {
         CUDA_CHECK(cudaMemcpy(dst, src, count * sizeof(T), cudaMemcpyHostToHost));
     }
 
-    void set_zero(T* ptr, int count)
+    void set_zero_d(T* ptr, int count)
     {
         CUDA_CHECK(cudaMemset(ptr, 0, count * sizeof(T)));
     }
 
-    void free_elements(T* ptr)
+    void free_elements_d(T* ptr)
     {
-        free_migratable(ptr);
+        Migratable<2>::free_migratable(ptr);
     }
 
     T* devptr()
     {
-        if (MigratableBufferBase<T>::data == NULL)
+        if (MigratableBufferBase<T, MigratablePinnedBuffer<T> >::data == NULL)
             return NULL;
         T* ptr;
-        CUDA_CHECK(cudaHostGetDevicePointer(&ptr, MigratableBufferBase<T>::data, 0));
+        CUDA_CHECK(cudaHostGetDevicePointer(&ptr,
+            MigratableBufferBase<T, MigratablePinnedBuffer<T> >::data, 0));
         return ptr;
     }
 };
 
 template <typename T>
-class MigratableBuffer2 : public MigratableBufferBase<T>
+class MigratableBuffer2 : public MigratableBufferBase2<T, MigratableBuffer2<T> >
 {
+private:
+    typedef MigratableBufferBase2<T, MigratableBuffer2<T> > Base;
 public:
-    AnyMigratable* migratable;
+    MigratableBuffer2(AnyMigratable* migratable, int n = 0):
+        Base(migratable, n) {}
 
-    MigratableBuffer2(AnyMigratable* migratable = NULL, int n = 0):
-        MigratableBufferBase<T>(n), migratable(migratable) {}
-protected:
-    void allocate_elements(T** ptr, int count)
+    void allocate_elements_d(T** ptr, int count)
     {
-        assert(migratable);
-        migratable->malloc_migratable((void**) ptr, count * sizeof(T));
+        Base::get_migratable()->malloc_migratable((void**) ptr, count * sizeof(T));
     }
 
-    void copy_elements(T* dst, T* src, int count)
+    void copy_elements_d(T* dst, T* src, int count)
     {
         memcpy(dst, src, count * sizeof(T));
     }
 
-    void set_zero(T* ptr, int count)
+    void set_zero_d(T* ptr, int count)
     {
         memset(ptr, 0, count * sizeof(T));
     }
 
-    void free_elements(T* ptr)
+    void free_elements_d(T* ptr)
     {
-        assert(migratable);
-        migratable->free_migratable(ptr);
+        Base::get_migratable()->free_migratable(ptr);
     }
 };
 
 template <typename T>
-class MigratableDeviceBuffer2 : public MigratableBufferBase<T>
+class MigratableDeviceBuffer2 : public MigratableBufferBase2<T, MigratableDeviceBuffer2<T> >
 {
+private:
+    typedef MigratableBufferBase2<T, MigratableDeviceBuffer2<T> > Base;
 public:
-    AnyMigratable* migratable;
+    MigratableDeviceBuffer2(AnyMigratable* migratable, int n = 0):
+        Base(migratable, n) {}
 
-    MigratableDeviceBuffer2(AnyMigratable* migratable = NULL, int n = 0):
-        MigratableBufferBase<T>(n), migratable(migratable) {}
-protected:
-    void allocate_elements(T** ptr, int count)
+    void allocate_elements_d(T** ptr, int count)
     {
-        assert(migratable);
-        migratable->malloc_migratable_device((void**) ptr, count * sizeof(T));
+        Base::get_migratable()->malloc_migratable_device((void**) ptr, count * sizeof(T));
     }
 
-    void copy_elements(T* dst, T* src, int count)
+    void copy_elements_d(T* dst, T* src, int count)
     {
         CUDA_CHECK(cudaMemcpy(dst, src, count * sizeof(T), cudaMemcpyDeviceToDevice));
     }
 
-    void set_zero(T* ptr, int count)
+    void set_zero_d(T* ptr, int count)
     {
         CUDA_CHECK(cudaMemset(ptr, 0, count * sizeof(T)));
     }
 
-    void free_elements(T* ptr)
+    void free_elements_d(T* ptr)
     {
-        assert(migratable);
-        migratable->free_migratable(ptr);
+        Base::get_migratable()->free_migratable(ptr);
     }
 };
 
 template <typename T>
-class MigratableHostBuffer2 : public MigratableBufferBase<T>
+class MigratableHostBuffer2 : public MigratableBufferBase2<T, MigratableHostBuffer2<T> >
 {
+private:
+    typedef MigratableBufferBase2<T, MigratableHostBuffer2<T> > Base;
 public:
-    AnyMigratable* migratable;
+    MigratableHostBuffer2(AnyMigratable* migratable, int n = 0):
+        Base(migratable, n) {}
 
-    MigratableHostBuffer2(AnyMigratable* migratable = NULL, int n = 0):
-        MigratableBufferBase<T>(n), migratable(migratable) {}
-protected:
-    void allocate_elements(T** ptr, int count)
+    void allocate_elements_d(T** ptr, int count)
     {
-        assert(migratable);
-        migratable->malloc_migratable_host((void**) ptr, count * sizeof(T));
+        Base::get_migratable()->malloc_migratable_host((void**) ptr, count * sizeof(T));
     }
 
-    void copy_elements(T* dst, T* src, int count)
+    void copy_elements_d(T* dst, T* src, int count)
     {
         memcpy(dst, src, count * sizeof(T));
     }
 
-    void set_zero(T* ptr, int count)
+    void set_zero_d(T* ptr, int count)
     {
         memset(ptr, 0, count * sizeof(T));
     }
 
-    void free_elements(T* ptr)
+    void free_elements_d(T* ptr)
     {
-        assert(migratable);
-        migratable->free_migratable(ptr);
+        Base::get_migratable()->free_migratable(ptr);
     }
 };
 
 template <typename T>
-class MigratablePinnedBuffer2 : public MigratableBufferBase<T>
+class MigratablePinnedBuffer2 : public MigratableBufferBase2<T, MigratablePinnedBuffer2<T> >
 {
+private:
+    typedef MigratableBufferBase2<T, MigratablePinnedBuffer2<T> > Base;
 public:
-    AnyMigratable* migratable;
+    MigratablePinnedBuffer2(AnyMigratable* migratable, int n = 0):
+        Base(migratable, n) {}
 
-    MigratablePinnedBuffer2(AnyMigratable* migratable = NULL, int n = 0):
-        MigratableBufferBase<T>(n), migratable(migratable) {}
-protected:
-    void allocate_elements(T** ptr, int count)
+    void allocate_elements_d(T** ptr, int count)
     {
-        assert(migratable);
-        migratable->malloc_migratable_pinned((void**) ptr, count * sizeof(T));
+        Base::get_migratable()->malloc_migratable_pinned((void**) ptr, count * sizeof(T));
     }
 
-    void copy_elements(T* dst, T* src, int count)
+    void copy_elements_d(T* dst, T* src, int count)
     {
         CUDA_CHECK(cudaMemcpy(dst, src, count * sizeof(T), cudaMemcpyHostToHost));
     }
 
-    void set_zero(T* ptr, int count)
+    void set_zero_d(T* ptr, int count)
     {
         CUDA_CHECK(cudaMemset(ptr, 0, count * sizeof(T)));
     }
 
-    void free_elements(T* ptr)
+    void free_elements_d(T* ptr)
     {
-        assert(migratable);
-        migratable->free_migratable(ptr);
+        Base::get_migratable()->free_migratable(ptr);
     }
 
     T* devptr()
     {
-        if (MigratableBufferBase<T>::data == NULL)
+        if (MigratableBufferBase<T, MigratablePinnedBuffer2<T> >::data == NULL)
             return NULL;
         T* ptr;
-        CUDA_CHECK(cudaHostGetDevicePointer(&ptr, MigratableBufferBase<T>::data, 0));
+        CUDA_CHECK(cudaHostGetDevicePointer(&ptr,
+            MigratableBufferBase<T, MigratablePinnedBuffer2<T> >::data, 0));
         return ptr;
     }
 };
