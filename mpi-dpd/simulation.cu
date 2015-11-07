@@ -972,21 +972,15 @@ void Simulation::_post_migrate()
 void Simulation::_migrate()
 {
 #ifdef AMPI
-    MPI_Barrier(MPI_COMM_WORLD);
-    char processor_name[MPI_MAX_PROCESSOR_NAME];
-    int processor_name_length;
-    MPI_Get_processor_name(processor_name, &processor_name_length);
-    processor_name[processor_name_length + 1] = 0;
-    printf("%s: start migration\n", processor_name);
+    const int pe_before = MPI_My_pe();
+    int vp;
+    MPI_Comm_rank(MPI_COMM_WORLD, &vp);
     _pre_migrate();
-    MPI_Barrier(MPI_COMM_WORLD);
     MPI_Migrate();
-    MPI_Barrier(MPI_COMM_WORLD);
     _post_migrate();
-    MPI_Get_processor_name(processor_name, &processor_name_length);
-    processor_name[processor_name_length + 1] = 0;
-    printf("%s: migration done\n", processor_name);
-    MPI_Barrier(MPI_COMM_WORLD);
+    const int pe_after = MPI_My_pe();
+    if (pe_before != pe_after)
+        printf("\x1b[95mmigrated VP %d from PE %d to PE %d\x1b[0m\n", vp, pe_before, pe_after);
 #endif
 }
 
