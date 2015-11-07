@@ -537,7 +537,8 @@ void SolventExchange::post(const Particle * const p, const int n, cudaStream_t s
 	{
 	    const int nrequired = required_send_bag_size_host[i];
 
-	    sendhalos[i].dbuf.size = nrequired;
+	    //sendhalos[i].dbuf.size = nrequired;
+        sendhalos[i].dbuf.resize(nrequired);
 
 	    //sendhalos[i].hbuf.size = nrequired;
 	    sendhalos[i].hbuf.resize(nrequired);
