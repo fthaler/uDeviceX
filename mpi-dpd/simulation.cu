@@ -941,9 +941,14 @@ void Simulation::_pre_migrate()
         delete contact;
     contact = NULL;
 
+    CUDA_CHECK(cudaStreamSynchronize(mainstream));
+    CUDA_CHECK(cudaStreamSynchronize(uploadstream));
+    CUDA_CHECK(cudaStreamSynchronize(downloadstream));
     CUDA_CHECK(cudaStreamDestroy(mainstream));
     CUDA_CHECK(cudaStreamDestroy(uploadstream));
     CUDA_CHECK(cudaStreamDestroy(downloadstream));
+
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void Simulation::_post_migrate()
@@ -960,19 +965,27 @@ void Simulation::_post_migrate()
     CUDA_CHECK(cudaStreamCreate(&mainstream));
     CUDA_CHECK(cudaStreamCreate(&uploadstream));
     CUDA_CHECK(cudaStreamCreate(&downloadstream));
+
+    redistribute.update_device_pointers();
 }
 
 void Simulation::_migrate()
 {
 #ifdef AMPI
     MPI_Barrier(MPI_COMM_WORLD);
-    printf("start migration\n");
+    char processor_name[MPI_MAX_PROCESSOR_NAME];
+    int processor_name_length;
+    MPI_Get_processor_name(processor_name, &processor_name_length);
+    processor_name[processor_name_length + 1] = 0;
+    printf("%s: start migration\n", processor_name);
     _pre_migrate();
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Migrate();
     MPI_Barrier(MPI_COMM_WORLD);
     _post_migrate();
-    printf("migration done\n");
+    MPI_Get_processor_name(processor_name, &processor_name_length);
+    processor_name[processor_name_length + 1] = 0;
+    printf("%s: migration done\n", processor_name);
     MPI_Barrier(MPI_COMM_WORLD);
 #endif
 }
@@ -1033,9 +1046,6 @@ void Simulation::run()
 		break;
 
 	    _report(verbose, it);
-
-        redistribute.set_lastcall();
-        dpd->set_lastpost();
 	}
 
 	_redistribute();
@@ -1050,15 +1060,28 @@ void Simulation::run()
 	    !(it + 1 == globals->nvtxstop) &&
 	    !((it + 1) % globals->steps_per_report == 0) &&
 	    !(it + 1 == nsteps);
+    const bool next_lockstep_OK = 
+	    !(globals->walls && (it + 1) >= globals->wall_creation_stepid && wall == NULL) &&
+	    !((it + 1) % globals->steps_per_dump == 0) &&
+	    !((it + 1) + 1 == globals->nvtxstart) &&
+	    !((it + 1) + 1 == globals->nvtxstop) &&
+	    !(((it + 1) + 1) % globals->steps_per_report == 0) &&
+	    !((it + 1) + 1 == nsteps);
 
 	if (lockstep_OK)
 	{
+        if (!next_lockstep_OK) {
+            redistribute.set_lastcall();
+            dpd->set_lastpost();
+        } 
 	    _lockstep();
 
 	    ++it;
 
 	    goto lockstep_check;
-	}
+    }
+    if (redistribute.migratable())
+        _migrate();
 #endif
 
 	if (globals->walls && it >= globals->wall_creation_stepid && wall == NULL)
@@ -1091,9 +1114,6 @@ void Simulation::run()
 #endif
 	_update_and_bounce();
 
-	if (it % globals->steps_per_report == 0) {
-        _migrate();
-    }
     }
 
     const double time_simulation_stop = MPI_Wtime();
