@@ -217,8 +217,10 @@ void Migratable<B, E>::pup(pup_er p, void *d)
 
         for (int i = 0; i < MAX_EVENTS; ++i) {
             Event& e = m->events[i];
-            if (e.status == Event::ACTIVE)
+            if (e.status == Event::ACTIVE) {
+                CUDA_CHECK(cudaEventSynchronize(e.event));
                 CUDA_CHECK(cudaEventDestroy(e.event));
+            }
         }
     }
     for (int i = 0; i < MAX_BUFFERS; ++i) {
@@ -235,6 +237,7 @@ void Migratable<B, E>::pup(pup_er p, void *d)
                     void* newPtr;
                     CUDA_CHECK(cudaMalloc(&newPtr, b.size));
                     CUDA_CHECK(cudaMemcpy(newPtr, b.ptr, b.size, cudaMemcpyHostToDevice));
+                    ::free(b.ptr);
                     b.ptr = newPtr;
                 }
                 void** memberPtr = (void**) ((ptrdiff_t) m + b.offset);
