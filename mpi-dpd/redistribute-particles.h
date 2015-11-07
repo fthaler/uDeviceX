@@ -16,6 +16,7 @@
 
 #include "common.h"
 #include "migration.h"
+#include "migratable-datastructures.h"
 
 class RedistributeParticles : public Migratable<100, 3>
 {
@@ -58,6 +59,10 @@ public:
     float pinned_data(const int code, const int entry) { return pinnedhost_sendbufs[code][entry]; }
 
     void set_lastcall() { assert(!firstcall); lastcall = true; }
+
+    bool migratable() { return firstcall && !lastcall; }
+
+    void update_device_pointers();
 
 private:
     // moved globals from redistribute-particles.cu
@@ -103,17 +108,17 @@ private:
     void _adjust_send_buffers(const int capacities[27]);
     bool _adjust_recv_buffers(const int capacities[27]);
 
-    PinnedHostBuffer<bool> failure;
-    PinnedHostBuffer<int> packsizes;
+    MigratablePinnedBuffer2<bool> failure;
+    MigratablePinnedBuffer2<int> packsizes;
    
     float * pinnedhost_sendbufs[27], * pinnedhost_recvbufs[27];
    
     PackBuffer packbuffers[27];
     UnpackBuffer unpackbuffers[27];
 
-    SimpleDeviceBuffer<unsigned char> compressed_cellcounts;
-    SimpleDeviceBuffer<Particle> remote_particles;
-    SimpleDeviceBuffer<uint> scattered_indices;
-    SimpleDeviceBuffer<uchar4> subindices, subindices_remote;
+    MigratableDeviceBuffer2<unsigned char> compressed_cellcounts;
+    MigratableDeviceBuffer2<Particle> remote_particles;
+    MigratableDeviceBuffer2<uint> scattered_indices;
+    MigratableDeviceBuffer2<uchar4> subindices, subindices_remote;
 };
 

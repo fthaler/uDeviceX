@@ -439,10 +439,11 @@ namespace RedistributeParticlesKernels
 
 RedistributeParticles::RedistributeParticles(MPI_Comm _cartcomm):
 texAllParticlesFloat2(0),
-failure(1), packsizes(27), nactiveneighbors(26), firstcall(true), lastcall(false),
-compressed_cellcounts(XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN),
-subindices(1.5 * numberdensity * XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN),
-subindices_remote(1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN -
+failure(this, 1), packsizes(this, 27), nactiveneighbors(26), firstcall(true), lastcall(false),
+compressed_cellcounts(this, XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN),
+remote_particles(this), scattered_indices(this),
+subindices(this, 1.5 * numberdensity * XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN),
+subindices_remote(this, 1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN -
 					 (XSIZE_SUBDOMAIN - 2) * (YSIZE_SUBDOMAIN - 2) * (ZSIZE_SUBDOMAIN - 2)))
 {
     safety_factor = getenv("RDP_COMM_FACTOR") ? atof(getenv("RDP_COMM_FACTOR")) : 1.2;
@@ -687,7 +688,7 @@ pack_attempt:
     if (nparticles)
 	RedistributeParticlesKernels::scatter_halo_indices_pack<<< (nparticles + 127) / 128, 128, 0, mystream>>>(texAllParticles, pack_buffers, pack_count, nparticles);
 
-    RedistributeParticlesKernels::tiny_scan<<<1, 32, 0, mystream>>>(pack_buffers, pack_count, pack_start_padded, failed, nparticles, packbuffers[0].capacity, packsizes.devptr, failure.devptr);
+    RedistributeParticlesKernels::tiny_scan<<<1, 32, 0, mystream>>>(pack_buffers, pack_count, pack_start_padded, failed, nparticles, packbuffers[0].capacity, packsizes.devptr(), failure.devptr());
 
     CUDA_CHECK(cudaEventRecord(evsizes, mystream));
 
@@ -950,7 +951,6 @@ void RedistributeParticles::recv_unpack(Particle * const particles, float4 * con
 
     if (lastcall) {
         assert(!firstcall);
-        printf("waiting lastcall\n");
         _waitall(sendcountreq, nactiveneighbors);
         _waitall(sendmsgreq, nsendmsgreq);
         lastcall = false;
@@ -1024,4 +1024,18 @@ RedistributeParticles::~RedistributeParticles()
     free_migratable(unpack_start);
     free_migratable(unpack_start_padded);
     free_migratable(failed);
+}
+
+void RedistributeParticles::update_device_pointers()
+{
+    for (int i = 0; i < 27; ++i)
+    {
+        assert(!((pinnedhost_sendbufs[i] == NULL) ^ (pinnedhost_sendbufs[i] == NULL)));
+        if (pinnedhost_sendbufs[i] && pinnedhost_recvbufs[i]) {
+            CUDA_CHECK(cudaHostGetDevicePointer(&packbuffers[i].buffer, pinnedhost_sendbufs[i], 0));
+            CUDA_CHECK(cudaHostGetDevicePointer(&unpackbuffers[i].buffer, pinnedhost_recvbufs[i], 0));
+        } else {
+            unpackbuffers[i].buffer = packbuffers[i].buffer;
+        }
+    }
 }
