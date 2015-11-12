@@ -52,7 +52,6 @@ using namespace std;
 void xyz_dump(MPI_Comm comm, MPI_Comm cartcomm, const char * filename, const char * particlename, Particle * particles, int n, bool append)
 {
 #ifndef _NO_MPIO_
-    printf("asd\n");
     int rank;
     MPI_CHECK( MPI_Comm_rank(comm, &rank) );
 
