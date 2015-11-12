@@ -15,7 +15,7 @@ NVCCFLAGS += -I../cuda-dpd/dpd -I../cuda-rbc/ -I../cuda-ctc
 
 # AMPI-specific
 AMPICXX ?= $(CHARMDIR)/bin/ampicxx
-CXXFLAGS += -module CommonLBs
+CXXFLAGS += -module CommonLBs -lampiromio
 # currently no IO is supported
 mpio ?= 0
 mpithread ?= 0

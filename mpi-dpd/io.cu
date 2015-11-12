@@ -14,6 +14,10 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 
+#ifndef _NO_MPIO_
+#include <mpio.h>
+#endif
+
 #ifndef NO_H5
 #include <hdf5.h>
 #endif
@@ -29,11 +33,26 @@
 
 #include "io.h"
 
+// simple hacks for AMPI's missing MPI_OFFSET type and MPI_Exscan
+#ifdef AMPI
+#define MPI_OFFSET MPI_LONG_LONG
+int MPI_Exscan(const void* sendbuf, void* recvbuf, int count, MPI_Datatype datatype,
+               MPI_Op op, MPI_Comm comm)
+{
+    // currently the hack only supports datatype long long and one element
+    assert(datatype == MPI_LONG_LONG && count == 1);
+    MPI_Scan(const_cast<void*>(sendbuf), recvbuf, count, datatype, op, comm);
+    *reinterpret_cast<long long*>(recvbuf) -= *reinterpret_cast<const long long*>(sendbuf);
+    return 0;
+}
+#endif
+
 using namespace std;
 
 void xyz_dump(MPI_Comm comm, MPI_Comm cartcomm, const char * filename, const char * particlename, Particle * particles, int n, bool append)
 {
 #ifndef _NO_MPIO_
+    printf("asd\n");
     int rank;
     MPI_CHECK( MPI_Comm_rank(comm, &rank) );
 
@@ -52,7 +71,7 @@ void xyz_dump(MPI_Comm comm, MPI_Comm cartcomm, const char * filename, const cha
     append &= !filenotthere;
 
     MPI_File f;
-    MPI_CHECK( MPI_File_open(comm, filename , MPI_MODE_WRONLY | (append ? MPI_MODE_APPEND : MPI_MODE_CREATE), MPI_INFO_NULL, &f) );
+    MPI_CHECK( MPI_File_open(comm, const_cast<char*>(filename), MPI_MODE_WRONLY | (append ? MPI_MODE_APPEND : MPI_MODE_CREATE), MPI_INFO_NULL, &f) );
 
     if (!append)
 	MPI_CHECK( MPI_File_set_size (f, 0));
@@ -101,7 +120,7 @@ void _write_bytes(const void * const ptr, const int nbytes32, MPI_File f, MPI_Co
 
     MPI_Status status;
 
-    MPI_CHECK( MPI_File_write_at_all(f, base + offset, ptr, nbytes, MPI_CHAR, &status));
+    MPI_CHECK( MPI_File_write_at_all(f, base + offset, const_cast<void*>(ptr), nbytes, MPI_CHAR, &status));
 
     MPI_Offset ntotal = 0;
     MPI_CHECK( MPI_Allreduce(&nbytes, &ntotal, 1, MPI_OFFSET, MPI_SUM, comm) );
@@ -125,14 +144,14 @@ void ply_dump(MPI_Comm comm, MPI_Comm cartcomm, const char * filename,
 
     int NPOINTS = 0;
     const int n = particles.size();
-    MPI_CHECK( MPI_Reduce(&n, &NPOINTS, 1, MPI_INT, MPI_SUM, 0, comm) );
+    MPI_CHECK( MPI_Reduce(const_cast<int*>(&n), &NPOINTS, 1, MPI_INT, MPI_SUM, 0, comm) );
 
     const int ntriangles = ntriangles_per_instance * ninstances;
     int NTRIANGLES = 0;
-    MPI_CHECK( MPI_Reduce(&ntriangles, &NTRIANGLES, 1, MPI_INT, MPI_SUM, 0, comm) );
+    MPI_CHECK( MPI_Reduce(const_cast<int*>(&ntriangles), &NTRIANGLES, 1, MPI_INT, MPI_SUM, 0, comm) );
 
     MPI_File f;
-    MPI_CHECK( MPI_File_open(comm, filename , MPI_MODE_WRONLY | (append ? MPI_MODE_APPEND : MPI_MODE_CREATE), MPI_INFO_NULL, &f) );
+    MPI_CHECK( MPI_File_open(comm, const_cast<char*>(filename), MPI_MODE_WRONLY | (append ? MPI_MODE_APPEND : MPI_MODE_CREATE), MPI_INFO_NULL, &f) );
 
     if (!append)
 	MPI_CHECK( MPI_File_set_size (f, 0));
