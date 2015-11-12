@@ -93,19 +93,25 @@ class Simulation : public GlobalsInjector
     void _migrate();
 
     double report_t0_a, report_t0_b;
+#ifndef AMPI
     pthread_t thread_datadump;
     pthread_mutex_t mutex_datadump;
     pthread_cond_t request_datadump, done_datadump;
     bool datadump_pending;
     int datadump_idtimestep, datadump_nsolvent, datadump_nrbcs, datadump_nctcs;
     bool async_thread_initialized;
+#endif
 
     PinnedHostBuffer<Particle> particles_datadump;
     PinnedHostBuffer<Acceleration> accelerations_datadump;
 
     cudaEvent_t evdownloaded;
 
+#ifdef AMPI
+    void _datadump_ampi(const int idtimestep);
+#else
     void  _datadump_async();
+#endif
 
 public:
 
@@ -115,5 +121,7 @@ public:
 
     ~Simulation();
 
+#ifndef AMPI
     static void * datadump_trampoline(void * x) { ((Simulation *)x)->_datadump_async(); return NULL; }
+#endif
 };

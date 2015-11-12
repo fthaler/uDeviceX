@@ -431,10 +431,14 @@ void Simulation::_datadump(const int idtimestep)
 {
     double tstart = MPI_Wtime();
 
+#ifdef AMPI
+	CUDA_CHECK(cudaEventCreate(&evdownloaded, cudaEventDisableTiming | cudaEventBlockingSync));
+#else
     pthread_mutex_lock(&mutex_datadump);
 
     while (datadump_pending)
 	pthread_cond_wait(&done_datadump, &mutex_datadump);
+#endif
 
     int n = particles->size;
 
@@ -472,6 +476,9 @@ void Simulation::_datadump(const int idtimestep)
 
     CUDA_CHECK(cudaEventRecord(evdownloaded, 0));
 
+#ifdef AMPI
+    _datadump_ampi(idtimestep);
+#else
     datadump_idtimestep = idtimestep;
     datadump_nsolvent = particles->size;
     datadump_nrbcs = rbcscoll ? rbcscoll->pcount() : 0;
@@ -485,10 +492,63 @@ void Simulation::_datadump(const int idtimestep)
 #endif
 
     pthread_mutex_unlock(&mutex_datadump);
+#endif // AMPI
 
     timings["data-dump"] += MPI_Wtime() - tstart;
 }
 
+#ifdef AMPI
+void Simulation::_datadump_ampi(const int idtimestep)
+{
+    int rank;
+    MPI_CHECK(MPI_Comm_rank(activecomm, &rank));
+    bool wallcreated = false;
+
+    if (rank == 0)
+	    mkdir("xyz", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+
+	CUDA_CHECK(cudaEventSynchronize(evdownloaded));
+
+	const int n = particles_datadump.size;
+	Particle * p = particles_datadump.data;
+	Acceleration * a = accelerations_datadump.data;
+
+	{
+	    NVTX_RANGE("diagnostics", NVTX_C1);
+	    diagnostics(activecomm, cartcomm, p, n, dt, idtimestep, a);
+	}
+
+	if (globals->xyz_dumps)
+	{
+	    NVTX_RANGE("xyz dump", NVTX_C2);
+
+	    if (globals->walls && idtimestep >= globals->wall_creation_stepid && !wallcreated)
+	    {
+            if (rank == 0)
+            {
+                if(access("xyz/particles-equilibration.xyz", F_OK ) == -1)
+                   rename("xyz/particles.xyz", "xyz/particles-equilibration.xyz");
+
+                if(access("xyz/rbcs-equilibration.xyz", F_OK ) == -1)
+                   rename("xyz/rbcs.xyz", "xyz/rbcs-equilibration.xyz");
+
+                if(access("xyz/ctcs-equilibration.xyz", F_OK ) == -1)
+                    rename("xyz/ctcs.xyz", "xyz/ctcs-equilibration.xyz");
+            }
+
+            MPI_CHECK(MPI_Barrier(activecomm));
+
+            wallcreated = true;
+	    }
+
+	    xyz_dump(activecomm, cartcomm, "xyz/particles.xyz", "all-particles", p, n, idtimestep > 0);
+	}
+
+    CUDA_CHECK(cudaEventDestroy(evdownloaded));
+}
+#endif // AMPI
+
+#ifndef AMPI
 void Simulation::_datadump_async()
 {
 #ifdef _USE_NVTX_
@@ -501,14 +561,8 @@ void Simulation::_datadump_async()
 
     MPI_Comm myactivecomm, mycartcomm;
 
-#ifdef AMPI
-    // AMPI's communicator duplication is broken, this is the workaround
-    myactivecomm = activecomm;
-    mycartcomm = cartcomm;
-#else
     MPI_CHECK(MPI_Comm_dup(activecomm, &myactivecomm) );
     MPI_CHECK(MPI_Comm_dup(cartcomm, &mycartcomm) );
-#endif
 
     H5PartDump dump_part("allparticles->h5part", activecomm, cartcomm), *dump_part_solvent = NULL;
     H5FieldDump dump_field(globals, cartcomm);
@@ -630,6 +684,7 @@ void Simulation::_datadump_async()
 
     CUDA_CHECK(cudaEventDestroy(evdownloaded));
 }
+#endif // AMPI
 
 void Simulation::_update_and_bounce()
 {
@@ -674,7 +729,10 @@ Simulation::Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm,
     dpd(NULL), fsi(NULL), contact(NULL), solutex(NULL),
     check_termination(check_termination),
     driving_acceleration(0), host_idle_time(0), nsteps((int)(globals->tend / dt)),
-    datadump_pending(false), simulation_is_done(false)
+#ifndef AMPI
+    datadump_pending(false),
+#endif
+    simulation_is_done(false)
 {
     particles_pingpong[0].globals = globals;
     particles_pingpong[1].globals = globals;
@@ -733,11 +791,14 @@ Simulation::Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm,
 #ifndef _NO_DUMPS_
     //setting up the asynchronous data dumps
     {
+#ifndef AMPI
 	CUDA_CHECK(cudaEventCreate(&evdownloaded, cudaEventDisableTiming | cudaEventBlockingSync));
+#endif
 
 	particles_datadump.resize(particles->size * 1.5);
 	accelerations_datadump.resize(particles->size * 1.5);
 
+#ifndef AMPI
 	int rc = pthread_mutex_init(&mutex_datadump, NULL);
 	rc |= pthread_cond_init(&done_datadump, NULL);
 	rc |= pthread_cond_init(&request_datadump, NULL);
@@ -759,6 +820,7 @@ Simulation::Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm,
 	    printf("ERROR; return code from pthread_create() is %d\n", rc);
 	    exit(-1);
 	}
+#endif // AMPI
     }
 #endif
 }
@@ -1128,6 +1190,7 @@ void Simulation::run()
 
 Simulation::~Simulation()
 {
+#ifndef AMPI
 #ifndef _NO_DUMPS_
     pthread_mutex_lock(&mutex_datadump);
 
@@ -1138,6 +1201,7 @@ Simulation::~Simulation()
 
     pthread_join(thread_datadump, NULL);
 #endif
+#endif // AMPI
 
     CUDA_CHECK(cudaStreamDestroy(mainstream));
     CUDA_CHECK(cudaStreamDestroy(uploadstream));
