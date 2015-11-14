@@ -541,7 +541,8 @@ void Simulation::_datadump_ampi(const int idtimestep)
             wallcreated = true;
 	    }
 
-	    xyz_dump(activecomm, cartcomm, "xyz/particles.xyz", "all-particles", p, n, idtimestep > 0);
+        // note: AMPI's MPIO hangs when appending, so we never append here...
+	    xyz_dump(activecomm, cartcomm, "xyz/particles.xyz", "all-particles", p, n, false);
 	}
 
     CUDA_CHECK(cudaEventDestroy(evdownloaded));
