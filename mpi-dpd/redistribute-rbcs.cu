@@ -384,5 +384,7 @@ void RedistributeRBCs::unpack(Particle * const xyzuvw, const int nrbcs, cudaStre
 
 RedistributeRBCs::~RedistributeRBCs()
 {    
+#ifndef AMPI
     MPI_CHECK(MPI_Comm_free(&cartcomm));
+#endif
 }
