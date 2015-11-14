@@ -18,6 +18,7 @@
 
 #include "common.h"
 #include "globals.h"
+#include "stack-allocator.h"
 
 class RedistributeRBCs
 {
@@ -28,7 +29,8 @@ protected:
     MPI_Comm cartcomm;
     MPI_Request sendcountreq[26];
 
-    std::vector<MPI_Request> sendreq, recvreq, recvcountreq;
+    typedef StackAllocator<MPI_Request, 100> RequestAllocator;
+    std::vector<MPI_Request, RequestAllocator> sendreq, recvreq, recvcountreq;
     
     int myrank, dims[3], periods[3], coords[3], rankneighbors[27], anti_rankneighbors[27];
     int recv_counts[27];
