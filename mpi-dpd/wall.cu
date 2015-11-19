@@ -756,12 +756,18 @@ struct FieldSampler
     }
 };
 
-ComputeWall::ComputeWall(Globals* globals, MPI_Comm cartcomm, Particle* const p, const int n, int& nsurvived,
-        ExpectedMessageSizes& new_sizes, const bool verbose):
-            GlobalsInjector(globals),
-            cartcomm(cartcomm), arrSDF(NULL), solid4(NULL), solid_size(0),
-            cells(globals, XSIZE_SUBDOMAIN + 2 * XMARGIN_WALL, YSIZE_SUBDOMAIN + 2 * YMARGIN_WALL, ZSIZE_SUBDOMAIN + 2 * ZMARGIN_WALL)
+ComputeWall::ComputeWall(Globals* globals, MPI_Comm cartcomm)
+    : GlobalsInjector(globals), cartcomm(cartcomm), arrSDF(NULL), solid4(NULL),
+    solid_size(0),  cells(globals, XSIZE_SUBDOMAIN + 2 * XMARGIN_WALL,
+        YSIZE_SUBDOMAIN + 2 * YMARGIN_WALL, ZSIZE_SUBDOMAIN + 2 * ZMARGIN_WALL),
+    active(false)
+{}
+
+void ComputeWall::init(Particle* const p, const int n, int& nsurvived,
+        ExpectedMessageSizes& new_sizes, const bool verbose)
 {
+    assert(!active);
+
     MPI_CHECK( MPI_Comm_rank(cartcomm, &myrank));
 
     MPI_CHECK( MPI_Cart_get(cartcomm, 3, dims, periods, coords) );
@@ -1106,10 +1112,14 @@ ComputeWall::ComputeWall(Globals* globals, MPI_Comm cartcomm, Particle* const p,
     CUDA_CHECK(cudaFree(solid));
 
     CUDA_CHECK(cudaPeekAtLastError());
+
+    active = true;
 }
 
 void ComputeWall::bounce(Particle * const p, const int n, cudaStream_t stream)
 {
+    assert(active);
+
     NVTX_RANGE("WALL/bounce", NVTX_C3)
 
 	        if (n > 0)
@@ -1121,6 +1131,8 @@ void ComputeWall::bounce(Particle * const p, const int n, cudaStream_t stream)
 void ComputeWall::interactions(const Particle * const p, const int n, Acceleration * const acc,
         const int * const cellsstart, const int * const cellscount, cudaStream_t stream)
 {
+    assert(active);
+
     NVTX_RANGE("WALL/interactions", NVTX_C3);
     //cellsstart and cellscount IGNORED for now
 

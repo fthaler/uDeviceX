@@ -37,6 +37,8 @@ class ComputeWall : public GlobalsInjector
 
     CellLists cells;
 
+    bool active;
+
 public:
     // global texture references moved from wall.cu
     cudaTextureObject_t texSDF;
@@ -45,7 +47,9 @@ public:
     /* currently unused
     texWallCellCount; */
 
-    ComputeWall(Globals* globals, MPI_Comm cartcomm, Particle* const p, const int n, int& nsurvived, ExpectedMessageSizes& new_sizes, const bool verbose);
+    ComputeWall(Globals* globals, MPI_Comm cartcomm);
+
+    void init(Particle* const p, const int n, int& nsurvived, ExpectedMessageSizes& new_sizes, const bool verbose);
 
     ~ComputeWall();
 
@@ -53,4 +57,6 @@ public:
 
     void interactions(const Particle * const p, const int n, Acceleration * const acc,
 		      const int * const cellsstart, const int * const cellscount, cudaStream_t stream);
+
+    bool is_active() const { return active; }
 };
