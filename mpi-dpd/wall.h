@@ -42,10 +42,6 @@ class ComputeWall : public GlobalsInjector
 public:
     // global texture references moved from wall.cu
     cudaTextureObject_t texSDF;
-    cudaTextureObject_t texWallParticles;
-    cudaTextureObject_t texWallCellStart;
-    /* currently unused
-    texWallCellCount; */
 
     ComputeWall(Globals* globals, MPI_Comm cartcomm);
 

@@ -1138,6 +1138,7 @@ void ComputeWall::interactions(const Particle * const p, const int n, Accelerati
 
     if (n > 0 && solid_size > 0)
     {
+        cudaTextureObject_t texWallParticles, texWallCellStart;
         {
             cudaResourceDesc resDesc;
             memset(&resDesc, 0, sizeof(resDesc));
