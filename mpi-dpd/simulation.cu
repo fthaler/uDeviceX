@@ -257,8 +257,8 @@ void Simulation::_remove_bodies_from_wall(CollectionBase * coll)
 
     SimpleDeviceBuffer<int> marks(coll->pcount());
 
-    assert(wall);
-    SolidWallsKernel::fill_keys<<< (coll->pcount() + 127) / 128, 128 >>>(wall->texSDF, coll->data(), coll->pcount(), marks.data);
+    assert(wall.is_active());
+    SolidWallsKernel::fill_keys<<< (coll->pcount() + 127) / 128, 128 >>>(wall.texSDF, coll->data(), coll->pcount(), marks.data);
 
     vector<int> tmp(marks.size);
     CUDA_CHECK(cudaMemcpy(tmp.data(), marks.data, sizeof(int) * marks.size, cudaMemcpyDeviceToHost));
@@ -291,8 +291,7 @@ void Simulation::_create_walls(const bool verbose, bool & termination_request)
 
     int nsurvived = 0;
     ExpectedMessageSizes new_sizes;
-    wall = new ComputeWall(globals, cartcomm);
-    wall->init(particles->xyzuvw.data, particles->size, nsurvived, new_sizes, verbose);
+    wall.init(particles->xyzuvw.data, particles->size, nsurvived, new_sizes, verbose);
 
     //adjust the message sizes if we're pushing the flow in x
     {
@@ -421,14 +420,14 @@ void Simulation::_forces()
 
     CUDA_CHECK(cudaPeekAtLastError());
 
-    if (rbcscoll && wall)
-	wall->interactions(rbcscoll->data(), rbcscoll->pcount(), rbcscoll->acc(), NULL, NULL, mainstream);
+    if (rbcscoll && wall.is_active())
+	wall.interactions(rbcscoll->data(), rbcscoll->pcount(), rbcscoll->acc(), NULL, NULL, mainstream);
 
-    if (ctcscoll && wall)
-	wall->interactions(ctcscoll->data(), ctcscoll->pcount(), ctcscoll->acc(), NULL, NULL, mainstream);
+    if (ctcscoll && wall.is_active())
+	wall.interactions(ctcscoll->data(), ctcscoll->pcount(), ctcscoll->acc(), NULL, NULL, mainstream);
 
-    if (wall)
-	wall->interactions(particles->xyzuvw.data, particles->size, particles->axayaz.data,
+    if (wall.is_active())
+	wall.interactions(particles->xyzuvw.data, particles->size, particles->axayaz.data,
 			   cells.start, cells.count, mainstream);
 
     CUDA_CHECK(cudaPeekAtLastError());
@@ -742,16 +741,16 @@ void Simulation::_update_and_bounce()
 
     timings["update"] += MPI_Wtime() - tstart;
 
-    if (wall)
+    if (wall.is_active())
     {
 	tstart = MPI_Wtime();
-	wall->bounce(particles->xyzuvw.data, particles->size, mainstream);
+	wall.bounce(particles->xyzuvw.data, particles->size, mainstream);
 
 	if (rbcscoll)
-	    wall->bounce(rbcscoll->data(), rbcscoll->pcount(), mainstream);
+	    wall.bounce(rbcscoll->data(), rbcscoll->pcount(), mainstream);
 
 	if (ctcscoll)
-	    wall->bounce(ctcscoll->data(), ctcscoll->pcount(), mainstream);
+	    wall.bounce(ctcscoll->data(), ctcscoll->pcount(), mainstream);
 
 	timings["bounce-walls"] += MPI_Wtime() - tstart;
     }
@@ -762,7 +761,7 @@ void Simulation::_update_and_bounce()
 Simulation::Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm, bool (*check_termination)()) :
     GlobalsInjector(globals), cartcomm(cartcomm), activecomm(activecomm),
     /*particles(_ic()),*/ cells(globals, XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN),
-    rbcscoll(NULL), ctcscoll(NULL), wall(NULL),
+    rbcscoll(NULL), ctcscoll(NULL), wall(globals, cartcomm),
     redistribute(cartcomm),  redistribute_rbcs(globals, cartcomm),  redistribute_ctcs(globals, cartcomm),
     /*dpd(globals, cartcomm), fsi(cartcomm), contact(cartcomm), solutex(cartcomm),*/
     dpd(NULL), fsi(NULL), contact(NULL), solutex(NULL),
@@ -906,8 +905,8 @@ void Simulation::_lockstep()
 
     CUDA_CHECK(cudaPeekAtLastError());
 
-    if (wall)
-	wall->interactions(particles->xyzuvw.data, particles->size, particles->axayaz.data,
+    if (wall.is_active())
+	wall.interactions(particles->xyzuvw.data, particles->size, particles->axayaz.data,
 			   cells.start, cells.count, mainstream);
 
     CUDA_CHECK(cudaPeekAtLastError());
@@ -939,8 +938,8 @@ void Simulation::_lockstep()
 
     particles->update_stage2_and_1(driving_acceleration, mainstream);
 
-    if (wall)
-	wall->bounce(particles->xyzuvw.data, particles->size, mainstream);
+    if (wall.is_active())
+	wall.bounce(particles->xyzuvw.data, particles->size, mainstream);
 
     CUDA_CHECK(cudaPeekAtLastError());
 
@@ -952,11 +951,11 @@ void Simulation::_lockstep()
 
     CUDA_CHECK(cudaPeekAtLastError());
 
-    if (rbcscoll && wall)
-	wall->interactions(rbcscoll->data(), rbcscoll->pcount(), rbcscoll->acc(), NULL, NULL, mainstream);
+    if (rbcscoll && wall.is_active())
+	wall.interactions(rbcscoll->data(), rbcscoll->pcount(), rbcscoll->acc(), NULL, NULL, mainstream);
 
-    if (ctcscoll && wall)
-	wall->interactions(ctcscoll->data(), ctcscoll->pcount(), ctcscoll->acc(), NULL, NULL, mainstream);
+    if (ctcscoll && wall.is_active())
+	wall.interactions(ctcscoll->data(), ctcscoll->pcount(), ctcscoll->acc(), NULL, NULL, mainstream);
 
     CUDA_CHECK(cudaPeekAtLastError());
 
@@ -968,11 +967,11 @@ void Simulation::_lockstep()
     if (ctcscoll)
 	ctcscoll->update_stage2_and_1(driving_acceleration, mainstream);
 
-    if (wall && rbcscoll)
-	wall->bounce(rbcscoll->data(), rbcscoll->pcount(), mainstream);
+    if (wall.is_active() && rbcscoll)
+	wall.bounce(rbcscoll->data(), rbcscoll->pcount(), mainstream);
 
-    if (wall && ctcscoll)
-	wall->bounce(ctcscoll->data(), ctcscoll->pcount(), mainstream);
+    if (wall.is_active() && ctcscoll)
+	wall.bounce(ctcscoll->data(), ctcscoll->pcount(), mainstream);
 
     const int newnp = redistribute.recv_count(mainstream, host_idle_time);
 
@@ -1149,14 +1148,14 @@ void Simulation::run()
     lockstep_check:
 
 	const bool lockstep_OK =
-	    !(globals->walls && it >= globals->wall_creation_stepid && wall == NULL) &&
+	    !(globals->walls && it >= globals->wall_creation_stepid && !wall.is_active()) &&
 	    !(it % globals->steps_per_dump == 0) &&
 	    !(it + 1 == globals->nvtxstart) &&
 	    !(it + 1 == globals->nvtxstop) &&
 	    !((it + 1) % globals->steps_per_report == 0) &&
 	    !(it + 1 == nsteps);
     const bool next_lockstep_OK = 
-	    !(globals->walls && (it + 1) >= globals->wall_creation_stepid && wall == NULL) &&
+	    !(globals->walls && (it + 1) >= globals->wall_creation_stepid && !wall.is_active()) &&
 	    !((it + 1) % globals->steps_per_dump == 0) &&
 	    !((it + 1) + 1 == globals->nvtxstart) &&
 	    !((it + 1) + 1 == globals->nvtxstop) &&
@@ -1179,7 +1178,7 @@ void Simulation::run()
         _migrate();
 #endif
 
-	if (globals->walls && it >= globals->wall_creation_stepid && wall == NULL)
+	if (globals->walls && it >= globals->wall_creation_stepid && !wall.is_active())
 	{
 	    CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -1257,9 +1256,6 @@ Simulation::~Simulation()
 
     if (contact)
     delete contact;
-
-    if (wall)
-	delete wall;
 
     if (rbcscoll)
 	delete rbcscoll;

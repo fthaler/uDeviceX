@@ -58,7 +58,7 @@ class Simulation : public GlobalsInjector
     ComputeFSI * fsi;
     ComputeContact * contact;
 
-    ComputeWall * wall;
+    ComputeWall wall;
 
     bool (*check_termination)();
     bool simulation_is_done;
