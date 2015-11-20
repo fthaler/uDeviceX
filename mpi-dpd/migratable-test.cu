@@ -8,7 +8,7 @@
 #include "migration.h"
 #include "migratable-datastructures.h"
 
-class MigratableThing : public Migratable<20>
+class MigratableThing : public Migratable<20, 0, 10>
 {
 public:
     explicit MigratableThing() : n_ptrs(0), buffer_size(512), id(id),
@@ -39,6 +39,14 @@ public:
         }
     }
 
+    void alloc_some_array()
+    {
+        if (n_arrays >= MAX_ARRAYS)
+            return;
+        cudaChannelFormatDesc d = cudaCreateChannelDesc<float>();
+        malloc_migratable_array(&arrays[n_arrays++], &d, make_cudaExtent(41, 23, 12));
+    }
+
     void do_some_stuff()
     {
         for (int i = 0; i < n_ptrs; ++i) {
@@ -49,11 +57,33 @@ public:
         }
     }
 
+    void do_some_array_stuff()
+    {
+        void* zeros = malloc(41 * 23 * 12 * sizeof(float));
+        memset(zeros, 0, 14 * 23 * 12 * sizeof(float));
+        for (int i = 0; i < n_arrays; ++i) {
+            cudaMemcpy3DParms p = {0};
+            p.srcPtr = make_cudaPitchedPtr(zeros, 41 * sizeof(float), 41, 23);
+            p.dstArray = arrays[i];
+            p.extent = make_cudaExtent(41, 23, 12);
+            p.kind = cudaMemcpyHostToDevice;
+            CUDA_CHECK(cudaMemcpy3D(&p));
+        }
+        free(zeros);
+    }
+
     void free_last()
     {
         if (n_ptrs == 0)
             return;
         free_migratable(ptrs[--n_ptrs]);
+    }
+
+    void free_last_array()
+    {
+        if (n_arrays == 0)
+            return;
+        free_migratable_array(arrays[--n_arrays]);
     }
 
     void resize_device_buffer(int size)
@@ -124,6 +154,9 @@ private:
     bool on_device[MAX_BUFFERS];
     int n_ptrs, buffer_size, id;
 
+    cudaArray_t arrays[MAX_ARRAYS];
+    int n_arrays;
+
     MigratableDeviceBuffer<int> dev_buffer;
     MigratableHostBuffer<float> host_buffer;
     MigratablePinnedBuffer<double> pin_buffer;
@@ -158,7 +191,7 @@ int main(int argc, char** argv)
         int j = rand() % n;
         MigratableThing& mt = things[j];
         std::cout << "things[" << mt.get_id() << "]";
-        int t = rand() % 14;
+        int t = rand() % 17;
         int size = 0;
         switch (t) {
         case 0:
@@ -217,6 +250,20 @@ int main(int argc, char** argv)
             mt.preserve_resize_pinned_buffer2(size);
             std::cout << ".preserve_resize_pinned_buffer2(" << size << ")";
             break;
+        case 14:
+            mt.alloc_some_array();
+            std::cout << ".alloc_some_array()";
+            break;
+        case 15:
+            mt.free_last_array();
+            std::cout << ".free_last_array()";
+            break;
+        case 16:
+            mt.do_some_array_stuff();
+            std::cout << ".do_some_array_stuff()";
+            break;
+        default:
+            assert(0);
         }
         std::cout << std::endl;
 
