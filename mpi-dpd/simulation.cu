@@ -213,8 +213,10 @@ void Simulation::_report(const bool verbose, const int idtimestep)
     if (verbose)
         printf("\x1b[95moverall PE imbalance: %.f%%\n", pe_imbalance);
 
-    // set load the same for all VPs on a PE
-    MPI_Set_load(pe_busy_time / vps_per_pe);
+    // compute load as a mix of average PE load and VP load
+    const float vp_mix = 0.1f;
+    const float load = (pe_busy_time / vps_per_pe) * (1.0f - vp_mix) + host_busy_time * vp_mix;
+    MPI_Set_load(load);
 #endif
 
 	const double imbalance = 100 * (maxval / sumval * commsize - 1);
