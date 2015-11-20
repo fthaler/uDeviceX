@@ -1041,6 +1041,9 @@ void Simulation::_pre_migrate()
         delete contact;
     contact = NULL;
 
+    if (wall.is_active())
+        wall.destroy_sdf_texture();
+
     CUDA_CHECK(cudaStreamSynchronize(mainstream));
     CUDA_CHECK(cudaStreamSynchronize(uploadstream));
     CUDA_CHECK(cudaStreamSynchronize(downloadstream));
@@ -1067,6 +1070,8 @@ void Simulation::_post_migrate()
     CUDA_CHECK(cudaStreamCreate(&downloadstream));
 
     redistribute.update_device_pointers();
+    if (wall.is_active())
+        wall.create_sdf_texture();
 }
 
 void Simulation::_migrate()
