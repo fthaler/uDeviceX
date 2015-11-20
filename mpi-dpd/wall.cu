@@ -760,7 +760,7 @@ ComputeWall::ComputeWall(Globals* globals, MPI_Comm cartcomm)
     : GlobalsInjector(globals), cartcomm(cartcomm), arrSDF(NULL), solid4(NULL),
     solid_size(0),  cells(globals, XSIZE_SUBDOMAIN + 2 * XMARGIN_WALL,
         YSIZE_SUBDOMAIN + 2 * YMARGIN_WALL, ZSIZE_SUBDOMAIN + 2 * ZMARGIN_WALL),
-    active(false)
+    active(false), texSDF(0)
 {}
 
 void ComputeWall::init(Particle* const p, const int n, int& nsurvived,
@@ -931,7 +931,7 @@ void ComputeWall::init(Particle* const p, const int n, int& nsurvived,
     CUDA_CHECK(cudaPeekAtLastError());
 
     cudaChannelFormatDesc fmt = cudaCreateChannelDesc<float>();
-    CUDA_CHECK(cudaMalloc3DArray (&arrSDF, &fmt, make_cudaExtent(XTEXTURESIZE, YTEXTURESIZE, ZTEXTURESIZE)));
+    malloc_migratable_array(&arrSDF, &fmt, make_cudaExtent(XTEXTURESIZE, YTEXTURESIZE, ZTEXTURESIZE));
 
     cudaMemcpy3DParms copyParams = {0};
     copyParams.srcPtr   = make_cudaPitchedPtr((void *)field, XTEXTURESIZE * sizeof(float), XTEXTURESIZE, YTEXTURESIZE);
@@ -943,21 +943,7 @@ void ComputeWall::init(Particle* const p, const int n, int& nsurvived,
 
     //SolidWallsKernel::setup();
 
-    cudaResourceDesc resDesc;
-    memset(&resDesc, 0, sizeof(resDesc));
-    resDesc.resType = cudaResourceTypeArray;
-    resDesc.res.array.array = arrSDF;
-    cudaTextureDesc texDesc;
-    memset(&texDesc, 0, sizeof(texDesc));
-    texDesc.filterMode = cudaFilterModePoint;
-    texDesc.mipmapFilterMode = cudaFilterModePoint;
-    texDesc.normalizedCoords = 0;
-    texDesc.addressMode[0] = cudaAddressModeWrap;
-    texDesc.addressMode[1] = cudaAddressModeWrap;
-    texDesc.addressMode[2] = cudaAddressModeWrap;
-
-    CUDA_CHECK(cudaCreateTextureObject(&texSDF,
-                                       &resDesc, &texDesc, NULL));
+    create_sdf_texture();
 
     //CUDA_CHECK(cudaBindTextureToArray(SolidWallsKernel::texSDF, arrSDF, fmt));
 
@@ -1101,7 +1087,7 @@ void ComputeWall::init(Particle* const p, const int n, int& nsurvived,
     if (solid_size > 0)
         cells.build(solid, solid_size, 0);
 
-    CUDA_CHECK(cudaMalloc(&solid4, sizeof(float4) * solid_size));
+    malloc_migratable_device((void**) &solid4, sizeof(float4) * solid_size);
 
     if (myrank == 0)
         printf("consolidating wall particles...\n");
@@ -1218,7 +1204,37 @@ void ComputeWall::interactions(const Particle * const p, const int n, Accelerati
 
 ComputeWall::~ComputeWall()
 {
-    CUDA_CHECK(cudaDestroyTextureObject(texSDF));
+    destroy_sdf_texture();
     //CUDA_CHECK(cudaUnbindTexture(SolidWallsKernel::texSDF));
-    CUDA_CHECK(cudaFreeArray(arrSDF));
+    free_migratable_array(arrSDF);
+    free_migratable(solid4);
+}
+
+void ComputeWall::create_sdf_texture()
+{
+    assert(texSDF == 0);
+
+    cudaResourceDesc resDesc;
+    memset(&resDesc, 0, sizeof(resDesc));
+    resDesc.resType = cudaResourceTypeArray;
+    resDesc.res.array.array = arrSDF;
+    cudaTextureDesc texDesc;
+    memset(&texDesc, 0, sizeof(texDesc));
+    texDesc.filterMode = cudaFilterModePoint;
+    texDesc.mipmapFilterMode = cudaFilterModePoint;
+    texDesc.normalizedCoords = 0;
+    texDesc.addressMode[0] = cudaAddressModeWrap;
+    texDesc.addressMode[1] = cudaAddressModeWrap;
+    texDesc.addressMode[2] = cudaAddressModeWrap;
+
+    CUDA_CHECK(cudaCreateTextureObject(&texSDF,
+                                       &resDesc, &texDesc, NULL));
+}
+
+void ComputeWall::destroy_sdf_texture()
+{
+    if (texSDF != 0) {
+        CUDA_CHECK(cudaDestroyTextureObject(texSDF));
+        texSDF = 0;
+    }
 }

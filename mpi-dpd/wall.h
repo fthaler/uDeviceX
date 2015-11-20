@@ -17,13 +17,15 @@
 #include <../dpd-rng.h>
 #include "common.h"
 #include "globals.h"
+#include "migration.h"
+#include "migratable-datastructures.h"
 
 namespace SolidWallsKernel
 {
     __global__ void fill_keys(cudaTextureObject_t texSDF, const Particle * const particles, const int n, int * const key);
 }
 
-class ComputeWall : public GlobalsInjector
+class ComputeWall : public GlobalsInjector, public Migratable<2, 0, 1>
 {
     MPI_Comm cartcomm;
     int myrank, dims[3], periods[3], coords[3];
@@ -33,9 +35,9 @@ class ComputeWall : public GlobalsInjector
     int solid_size;
     float4 * solid4;
 
-    cudaArray * arrSDF;
+    cudaArray_t arrSDF;
 
-    CellLists cells;
+    MigratableCellLists cells;
 
     bool active;
 
@@ -55,4 +57,6 @@ public:
 		      const int * const cellsstart, const int * const cellscount, cudaStream_t stream);
 
     bool is_active() const { return active; }
+    void create_sdf_texture();
+    void destroy_sdf_texture();
 };
