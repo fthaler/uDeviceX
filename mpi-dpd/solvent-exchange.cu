@@ -485,14 +485,14 @@ void SolventExchange::pack(const Particle * const p, const int n, const int * co
 	    for(int i = 0; i < 26; ++i)
 		srccells[i] = recvhalos[i].hcellstarts.devptr;
 
-        CUDA_CHECK(cudaMemcpy(this->srccells + sizeof(srccells), srccells, sizeof(srccells), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(this->srccells + 26, srccells, sizeof(srccells), cudaMemcpyHostToDevice));
 	    //CUDA_CHECK(cudaMemcpyToSymbol(PackingHalo::srccells, srccells, sizeof(srccells), sizeof(srccells), cudaMemcpyHostToDevice));
 
 	    int * dstcells[26];
 	    for(int i = 0; i < 26; ++i)
 		dstcells[i] = recvhalos[i].dcellstarts.data;
 
-        CUDA_CHECK(cudaMemcpy(this->dstcells + sizeof(dstcells), dstcells, sizeof(dstcells), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(this->dstcells + 26, dstcells, sizeof(dstcells), cudaMemcpyHostToDevice));
 	    //CUDA_CHECK(cudaMemcpyToSymbol(PackingHalo::dstcells, dstcells, sizeof(dstcells), sizeof(dstcells), cudaMemcpyHostToDevice));
 	}
     }
