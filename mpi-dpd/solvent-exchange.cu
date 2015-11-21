@@ -779,6 +779,8 @@ SolventExchange::~SolventExchange()
 
     _cancel_recv();
 
+    CUDA_CHECK(cudaEventSynchronize(evfillall));
+    CUDA_CHECK(cudaEventSynchronize(evdownloaded));
     CUDA_CHECK(cudaEventDestroy(evfillall));
     CUDA_CHECK(cudaEventDestroy(evdownloaded));
     CUDA_CHECK(cudaFree(cellpackstarts));
