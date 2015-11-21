@@ -19,12 +19,23 @@
 
 namespace SolutePUP
 {
-    __constant__ int ccapacities[26], * scattered_indices[26];
+    /* replaced by class-variables for use with AMPI
+    __constant__ int ccapacities[26], * scattered_indices[26];*/
 }
 
 SoluteExchange::SoluteExchange(MPI_Comm _cartcomm) :
 iterationcount(-1), packstotalstart(27), host_packstotalstart(27), host_packstotalcount(26)
 {
+    /* allocating replaced global variables */
+    CUDA_CHECK(cudaMalloc(&ccapacities, 26 * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&scattered_indices, 26 * sizeof(int*)));
+    CUDA_CHECK(cudaMalloc(&failed, sizeof(bool)));
+    CUDA_CHECK(cudaMalloc(&coffsets, 26 * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&ccounts, 26 * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&cbases, 27 * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&cpaddedstarts, 27 * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&recvbags, 26 * sizeof(float*)));
+
     assert(XSIZE_SUBDOMAIN % 2 == 0 && YSIZE_SUBDOMAIN % 2 == 0 && ZSIZE_SUBDOMAIN % 2 == 0);
     assert(XSIZE_SUBDOMAIN >= 4 && YSIZE_SUBDOMAIN >= 4 && ZSIZE_SUBDOMAIN >= 4);
 
@@ -55,10 +66,12 @@ iterationcount(-1), packstotalstart(27), host_packstotalstart(27), host_packstot
 	local[i].resize(estimate);
 	local[i].update();
 
-	CUDA_CHECK(cudaMemcpyToSymbol(SolutePUP::ccapacities, &local[i].scattered_indices.capacity, sizeof(int),
+    CUDA_CHECK(cudaMemcpy(ccapacities + i, &local[i].scattered_indices.capacity, sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(scattered_indices + i, &local[i].scattered_indices.data, sizeof(int*), cudaMemcpyHostToDevice));
+	/*CUDA_CHECK(cudaMemcpyToSymbol(SolutePUP::ccapacities, &local[i].scattered_indices.capacity, sizeof(int),
 				      sizeof(int) * i, cudaMemcpyHostToDevice));
 	CUDA_CHECK(cudaMemcpyToSymbol(SolutePUP::scattered_indices, &local[i].scattered_indices.data,
-				      sizeof(int *), sizeof(int *) * i, cudaMemcpyHostToDevice));
+				      sizeof(int *), sizeof(int *) * i, cudaMemcpyHostToDevice));*/
     }
 
     _adjust_packbuffers();
@@ -71,13 +84,13 @@ iterationcount(-1), packstotalstart(27), host_packstotalstart(27), host_packstot
 
 namespace SolutePUP
 {
-    __device__ bool failed;
+    /*__device__ bool failed;*/
 
-    __global__ void init() { failed = false; }
+    __global__ void init(bool* failed) { *failed = false; }
 
-    __constant__ int coffsets[26];
+    /*__constant__ int coffsets[26];*/
 
-    __global__ void scatter_indices(const float2 * const particles, const int nparticles, int * const counts)
+    __global__ void scatter_indices(const int* ccapacities, int** scattered_indices, const int* coffsets, const float2 * const particles, const int nparticles, int * const counts)
     {
 	assert(blockDim.x * gridDim.x >= nparticles && blockDim.x == 128);
 
@@ -172,7 +185,7 @@ namespace SolutePUP
 	}
     }
 
-    __global__ void tiny_scan(const int * const counts, const int * const oldtotalcounts, int * const totalcounts, int * const paddedstarts)
+    __global__ void tiny_scan(const int *ccapacities, bool* failed, const int * const counts, const int * const oldtotalcounts, int * const totalcounts, int * const paddedstarts)
     {
 	assert(blockDim.x == 32 && gridDim.x == 1);
 
@@ -185,7 +198,7 @@ namespace SolutePUP
 	    mycount = counts[tid];
 
 	    if (mycount > ccapacities[tid])
-		failed = true;
+		*failed = true;
 
 	    if (totalcounts && oldtotalcounts)
 	    {
@@ -193,7 +206,7 @@ namespace SolutePUP
 		totalcounts[tid] = newcount;
 
 		if (newcount > ccapacities[tid])
-		    failed = true;
+		    *failed = true;
 	    }
 	}
 
@@ -209,9 +222,9 @@ namespace SolutePUP
 	}
     }
 
-    __constant__ int ccounts[26], cbases[27], cpaddedstarts[27];
+    /*__constant__ int ccounts[26], cbases[27], cpaddedstarts[27];*/
 
-    __global__ void pack(const float2 * const particles, const int nparticles, float2 * const buffer, const int nbuffer, const int soluteid)
+    __global__ void pack(const int* ccapacities, int** scattered_indices, const bool* failed, const int* coffsets, const int* ccounts, const int* cbases, const int* cpaddedstarts, const float2 * const particles, const int nparticles, float2 * const buffer, const int nbuffer, const int soluteid)
     {
 	assert(blockDim.x == 128);
 
@@ -224,7 +237,7 @@ namespace SolutePUP
 #define _ACCESS(x) (*(x))
 #endif
 
-	if (failed)
+	if (*failed)
 	    return;
 
 	const int warpid = threadIdx.x >> 5;
@@ -305,7 +318,7 @@ void SoluteExchange::_pack_attempt(cudaStream_t stream)
     if (packsstart.size)
     CUDA_CHECK(cudaMemsetAsync(packsstart.data, 0, sizeof(int) * packsstart.size, stream));
 
-    SolutePUP::init<<< 1, 1, 0, stream >>>();
+    SolutePUP::init<<< 1, 1, 0, stream >>>(failed);
 
     for(int i = 0; i < wsolutes.size(); ++i)
     {
@@ -313,12 +326,13 @@ void SoluteExchange::_pack_attempt(cudaStream_t stream)
 
        	if (it.n)
 	{
-	    CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::coffsets, packsoffset.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(coffsets, packsoffset.data + 26 * i, sizeof(int) * 26, cudaMemcpyDeviceToDevice, stream));
+	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::coffsets, packsoffset.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
 
-	    SolutePUP::scatter_indices<<< (it.n + 127) / 128, 128, 0, stream >>>((float2 *)it.p, it.n, packscount.data + i * 26);
+	    SolutePUP::scatter_indices<<< (it.n + 127) / 128, 128, 0, stream >>>(ccapacities, scattered_indices, coffsets, (float2 *)it.p, it.n, packscount.data + i * 26);
 	}
 
-	SolutePUP::tiny_scan<<< 1, 32, 0, stream >>>(packscount.data + i * 26, packsoffset.data + 26 * i,
+	SolutePUP::tiny_scan<<< 1, 32, 0, stream >>>(ccapacities, failed, packscount.data + i * 26, packsoffset.data + 26 * i,
 						   packsoffset.data + 26 * (i + 1), packsstart.data + i * 27);
 
 	CUDA_CHECK(cudaPeekAtLastError());
@@ -326,11 +340,12 @@ void SoluteExchange::_pack_attempt(cudaStream_t stream)
 
     CUDA_CHECK(cudaMemcpyAsync(host_packstotalcount.data, packsoffset.data + 26 * wsolutes.size(), sizeof(int) * 26, cudaMemcpyDeviceToHost, stream));
 
-    SolutePUP::tiny_scan<<< 1, 32, 0, stream >>>(packsoffset.data + 26 * wsolutes.size(), NULL, NULL, packstotalstart.data);
+    SolutePUP::tiny_scan<<< 1, 32, 0, stream >>>(ccapacities, failed, packsoffset.data + 26 * wsolutes.size(), NULL, NULL, packstotalstart.data);
 
     CUDA_CHECK(cudaMemcpyAsync(host_packstotalstart.data, packstotalstart.data, sizeof(int) * 27, cudaMemcpyDeviceToHost, stream));
 
-    CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::cbases, packstotalstart.data, sizeof(int) * 27, 0, cudaMemcpyDeviceToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(cbases, packstotalstart.data, sizeof(int) * 27, cudaMemcpyDeviceToDevice, stream));
+    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::cbases, packstotalstart.data, sizeof(int) * 27, 0, cudaMemcpyDeviceToDevice, stream));
 
     for(int i = 0; i < wsolutes.size(); ++i)
     {
@@ -338,11 +353,14 @@ void SoluteExchange::_pack_attempt(cudaStream_t stream)
 
 	if (it.n)
 	{
-	    CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::coffsets, packsoffset.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
-	    CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::ccounts, packscount.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
-	    CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::cpaddedstarts, packsstart.data + 27 * i, sizeof(int) * 27, 0, cudaMemcpyDeviceToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(coffsets, packsoffset.data + 26 * i, sizeof(int) * 26, cudaMemcpyDeviceToDevice, stream));
+	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::coffsets, packsoffset.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(ccounts, packscount.data + 26 * i, sizeof(int) * 26, cudaMemcpyDeviceToDevice, stream));
+	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::ccounts, packscount.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(cpaddedstarts, packsstart.data + 27 * i, sizeof(int) * 27, cudaMemcpyDeviceToDevice));
+	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::cpaddedstarts, packsstart.data + 27 * i, sizeof(int) * 27, 0, cudaMemcpyDeviceToDevice, stream));
 
-	    SolutePUP::pack<<< 14 * 16, 128, 0, stream >>>((float2 *)it.p, it.n, (float2 *)packbuf.data, packbuf.capacity, i);
+	    SolutePUP::pack<<< 14 * 16, 128, 0, stream >>>(ccapacities, scattered_indices, failed, coffsets, ccounts, cbases, cpaddedstarts, (float2 *)it.p, it.n, (float2 *)packbuf.data, packbuf.capacity, i);
 	}
     }
 
@@ -402,13 +420,15 @@ void SoluteExchange::post_p(cudaStream_t stream, cudaStream_t downloadstream)
 	    for(int i = 0; i < 26; ++i)
 		newcapacities[i] = local[i].capacity();
 
-	    CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::ccapacities, newcapacities, sizeof(newcapacities), 0, cudaMemcpyHostToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(ccapacities, newcapacities, sizeof(newcapacities), cudaMemcpyHostToDevice, stream));
+	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::ccapacities, newcapacities, sizeof(newcapacities), 0, cudaMemcpyHostToDevice, stream));
 
 	    int * newindices[26];
 	    for(int i = 0; i < 26; ++i)
 		newindices[i] = local[i].scattered_indices.data;
 
-	    CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::scattered_indices, newindices, sizeof(newindices), 0, cudaMemcpyHostToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(scattered_indices, newindices, sizeof(newindices), cudaMemcpyHostToDevice, stream));
+	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::scattered_indices, newindices, sizeof(newindices), 0, cudaMemcpyHostToDevice, stream));
 
 	    _adjust_packbuffers();
 
@@ -583,9 +603,9 @@ void SoluteExchange::post_a()
 
 namespace SolutePUP
 {
-    __constant__ float * recvbags[26];
+    /*__constant__ float * recvbags[26];*/
 
-    __global__ void unpack(float * const accelerations, const int nparticles)
+    __global__ void unpack(const int* ccapacities, int** scattered_indices, const int* coffsets, const int* ccounts, const int* cpaddedstarts, float** recvbags, float * const accelerations, const int nparticles)
     {
 	const int npack_padded = cpaddedstarts[26];
 
@@ -645,7 +665,8 @@ void SoluteExchange::recv_a(cudaStream_t stream)
 	for(int i = 0; i < 26; ++i)
 	    recvbags[i] = (float *)local[i].result.devptr;
 
-	CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::recvbags, recvbags, sizeof(recvbags), 0, cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(this->recvbags, recvbags, sizeof(recvbags), cudaMemcpyHostToDevice));
+	//CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::recvbags, recvbags, sizeof(recvbags), 0, cudaMemcpyHostToDevice, stream));
     }
 
     _wait(reqrecvA);
@@ -656,11 +677,14 @@ void SoluteExchange::recv_a(cudaStream_t stream)
 
 	if (it.n)
 	{
-	    CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::cpaddedstarts, packsstart.data + 27 * i, sizeof(int) * 27, 0, cudaMemcpyDeviceToDevice, stream));
-	    CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::ccounts, packscount.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
-	    CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::coffsets, packsoffset.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(cpaddedstarts, packsstart.data + 27 * i, sizeof(int) * 27, cudaMemcpyDeviceToDevice, stream));
+	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::cpaddedstarts, packsstart.data + 27 * i, sizeof(int) * 27, 0, cudaMemcpyDeviceToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(ccounts, packscount.data + 26 * i, sizeof(int) * 26, cudaMemcpyDeviceToDevice, stream));
+	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::ccounts, packscount.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(coffsets, packsoffset.data + 26 * i, sizeof(int) * 26, cudaMemcpyDeviceToDevice, stream));
+	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::coffsets, packsoffset.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
 
-	    SolutePUP::unpack<<< 16 * 14, 128, 0, stream >>>((float *)it.a, it.n);
+	    SolutePUP::unpack<<< 16 * 14, 128, 0, stream >>>(ccapacities, scattered_indices, coffsets, ccounts, cpaddedstarts, recvbags, (float *)it.a, it.n);
 	}
 	CUDA_CHECK(cudaPeekAtLastError());
     }
@@ -672,4 +696,13 @@ SoluteExchange::~SoluteExchange()
 
     CUDA_CHECK(cudaEventDestroy(evPpacked));
     CUDA_CHECK(cudaEventDestroy(evAcomputed));
+
+    CUDA_CHECK(cudaFree(ccapacities));
+    CUDA_CHECK(cudaFree(scattered_indices));
+    CUDA_CHECK(cudaFree(failed));
+    CUDA_CHECK(cudaFree(coffsets));
+    CUDA_CHECK(cudaFree(ccounts));
+    CUDA_CHECK(cudaFree(cbases));
+    CUDA_CHECK(cudaFree(cpaddedstarts));
+    CUDA_CHECK(cudaFree(recvbags));
 }

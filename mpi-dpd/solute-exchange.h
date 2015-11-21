@@ -25,6 +25,12 @@ public:
     struct Visitor { virtual void halo(ParticlesWrap solutehalos[26], cudaStream_t stream) = 0; };
     
 protected:
+    /* global variables from solute-exchange.cu, moved for use with AMPI */
+    int *ccapacities, **scattered_indices;
+    bool* failed;
+    int* coffsets;
+    int* ccounts, *cbases, *cpaddedstarts;
+    float** recvbags;
 
     MPI_Comm cartcomm;
 
