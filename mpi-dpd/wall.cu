@@ -1206,8 +1206,10 @@ ComputeWall::~ComputeWall()
 {
     destroy_sdf_texture();
     //CUDA_CHECK(cudaUnbindTexture(SolidWallsKernel::texSDF));
-    free_migratable_array(arrSDF);
-    free_migratable(solid4);
+    if (active) {
+        free_migratable_array(arrSDF);
+        free_migratable(solid4);
+    }
 }
 
 void ComputeWall::create_sdf_texture()
