@@ -69,29 +69,29 @@ int main(int argc, char ** argv)
     	for(int i = 0; i < 3; ++i)
 	    ranks[i] = atoi(argv[1 + i]);
 
-    ArgumentParser argp(vector<string>(argv + 4, argv + argc));
+    ArgumentParser *argp = new ArgumentParser(vector<string>(argv + 4, argv + argc));
 
     Globals globals;
-    globals.tend = argp("-tend").asDouble(50);
-    globals.walls = argp("-walls").asBool(false);
-    globals.pushtheflow = argp("-pushtheflow").asBool(false);
-    globals.doublepoiseuille = argp("-doublepoiseuille").asBool(false);
-    globals.rbcs = argp("-rbcs").asBool(false);
-    globals.ctcs = argp("-ctcs").asBool(false);
-    globals.xyz_dumps = argp("-xyz_dumps").asBool(false);
-    globals.hdf5field_dumps = argp("-hdf5field_dumps").asBool(false);
-    globals.steps_per_report = argp("-steps_per_report").asInt(1000);
-    globals.steps_per_dump = argp("-steps_per_dump").asInt(1000);
-    globals.wall_creation_stepid = argp("-wall_creation_stepid").asInt(5000);
-    globals.nvtxstart = argp("-nvtxstart").asInt(10400);
-    globals.nvtxstop = argp("-nvtxstop").asInt(10500);
-    globals.adjust_message_sizes = argp("-adjust_message_sizes").asBool(false);
-    globals.contactforces = argp("-contactforces").asBool(false);
+    globals.tend = (*argp)("-tend").asDouble(50);
+    globals.walls = (*argp)("-walls").asBool(false);
+    globals.pushtheflow = (*argp)("-pushtheflow").asBool(false);
+    globals.doublepoiseuille = (*argp)("-doublepoiseuille").asBool(false);
+    globals.rbcs = (*argp)("-rbcs").asBool(false);
+    globals.ctcs = (*argp)("-ctcs").asBool(false);
+    globals.xyz_dumps = (*argp)("-xyz_dumps").asBool(false);
+    globals.hdf5field_dumps = (*argp)("-hdf5field_dumps").asBool(false);
+    globals.steps_per_report = (*argp)("-steps_per_report").asInt(1000);
+    globals.steps_per_dump = (*argp)("-steps_per_dump").asInt(1000);
+    globals.wall_creation_stepid = (*argp)("-wall_creation_stepid").asInt(5000);
+    globals.nvtxstart = (*argp)("-nvtxstart").asInt(10400);
+    globals.nvtxstop = (*argp)("-nvtxstop").asInt(10500);
+    globals.adjust_message_sizes = (*argp)("-adjust_message_sizes").asBool(false);
+    globals.contactforces = (*argp)("-contactforces").asBool(false);
 
 #ifndef _NO_DUMPS_
-    const bool mpi_thread_safe = argp("-mpi_thread_safe").asBool(true);
+    const bool mpi_thread_safe = (*argp)("-mpi_thread_safe").asBool(true);
 #else
-    const bool mpi_thread_safe = argp("-mpi_thread_safe").asBool(false);
+    const bool mpi_thread_safe = (*argp)("-mpi_thread_safe").asBool(false);
 #endif
 
     SignalHandling::setup();
@@ -230,9 +230,10 @@ int main(int argc, char ** argv)
 
 	if (rank == 0)
 	{
-	    argp.print_arguments();
+	    argp->print_arguments();
 	    fflush(stdout);
 	}
+    delete argp;
 
 	// localcomm.initialize(activecomm);
     globals.mpiDependentInit(activecomm);
