@@ -102,8 +102,8 @@ class Simulation : public GlobalsInjector
     bool async_thread_initialized;
 #endif
 
-    PinnedHostBuffer<Particle> particles_datadump;
-    PinnedHostBuffer<Acceleration> accelerations_datadump;
+    MigratablePinnedBuffer<Particle> particles_datadump;
+    MigratablePinnedBuffer<Acceleration> accelerations_datadump;
 
     cudaEvent_t evdownloaded;
 
