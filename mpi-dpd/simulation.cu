@@ -1079,6 +1079,7 @@ void Simulation::_post_migrate()
 void Simulation::_migrate()
 {
 #ifdef AMPI
+    const double tstart = MPI_Wtime();
     const int pe_before = MPI_My_pe();
     int vp;
     MPI_Comm_rank(MPI_COMM_WORLD, &vp);
@@ -1088,6 +1089,7 @@ void Simulation::_migrate()
     const int pe_after = MPI_My_pe();
     if (pe_before != pe_after)
         printf("\x1b[95mmigrated VP %d from PE %d to PE %d\x1b[0m\n", vp, pe_before, pe_after);
+    timings["migration"] += MPI_Wtime() - tstart;
 #endif
 }
 
