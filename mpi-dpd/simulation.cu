@@ -198,25 +198,27 @@ void Simulation::_report(const bool verbose, const int idtimestep)
     const int vpid = vps_per_pe++;
     MPI_CHECK(MPI_Barrier(activecomm));
 
-    // report info per PE
-    if (vpid == 0) {
-        printf("\x1b[95mPE %d workload (%d VPs) min/avg/max/total: %.2f/%.2f/%.2f ms\x1b[0m\n",
-               MPI_My_pe(), vps_per_pe, vp_busy_time_min, pe_busy_time / vps_per_pe, vp_busy_time_max, pe_busy_time);
+    if (idtimestep > 0) {
+        // report info per PE
+        if (vpid == 0) {
+            printf("\x1b[95mPE %d workload (%d VPs) min/avg/max/total: %.2f/%.2f/%.2f ms\x1b[0m\n",
+                   MPI_My_pe(), vps_per_pe, vp_busy_time_min, pe_busy_time / vps_per_pe, vp_busy_time_max, pe_busy_time);
+        }
+
+        // get and report PE-imbalance
+        float pe_busy_time_s = vpid == 0 ? pe_busy_time : 0.0f;
+        float pe_busy_time_sum, pe_busy_time_max;
+        MPI_CHECK(MPI_Reduce(&pe_busy_time_s, &pe_busy_time_sum, 1, MPI_FLOAT, MPI_SUM, 0, activecomm));
+        MPI_CHECK(MPI_Reduce(&pe_busy_time_s, &pe_busy_time_max, 1, MPI_FLOAT, MPI_MAX, 0, activecomm));
+        const double pe_imbalance = 100 * (pe_busy_time_max / pe_busy_time_sum * MPI_Num_pes() - 1);
+        if (verbose)
+            printf("\x1b[95moverall PE imbalance: %.f%%\n", pe_imbalance);
+
+        // compute load as a mix of average PE load and VP load
+        const float vp_mix = 0.1f;
+        const float load = (pe_busy_time / vps_per_pe) * (1.0f - vp_mix) + host_busy_time * vp_mix;
+        MPI_Set_load(load);
     }
-
-    // get and report PE-imbalance
-    float pe_busy_time_s = vpid == 0 ? pe_busy_time : 0.0f;
-    float pe_busy_time_sum, pe_busy_time_max;
-    MPI_CHECK(MPI_Reduce(&pe_busy_time_s, &pe_busy_time_sum, 1, MPI_FLOAT, MPI_SUM, 0, activecomm));
-    MPI_CHECK(MPI_Reduce(&pe_busy_time_s, &pe_busy_time_max, 1, MPI_FLOAT, MPI_MAX, 0, activecomm));
-    const double pe_imbalance = 100 * (pe_busy_time_max / pe_busy_time_sum * MPI_Num_pes() - 1);
-    if (verbose)
-        printf("\x1b[95moverall PE imbalance: %.f%%\n", pe_imbalance);
-
-    // compute load as a mix of average PE load and VP load
-    const float vp_mix = 0.1f;
-    const float load = (pe_busy_time / vps_per_pe) * (1.0f - vp_mix) + host_busy_time * vp_mix;
-    MPI_Set_load(load);
 #endif
 
 	const double imbalance = 100 * (maxval / sumval * commsize - 1);
@@ -772,7 +774,8 @@ Simulation::Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm,
 #ifndef AMPI
     datadump_pending(false),
 #endif
-    simulation_is_done(false)
+    simulation_is_done(false),
+    report_t0_a(MPI_Wtime()), report_t0_b(MPI_Wtime())
 {
     particles_pingpong[0].globals = globals;
     particles_pingpong[1].globals = globals;
@@ -1183,7 +1186,7 @@ void Simulation::run()
 
 	    goto lockstep_check;
     }
-    if (redistribute.migratable())
+    if (redistribute.migratable() && it > globals->steps_per_report)
         _migrate();
 #endif
 
