@@ -25,9 +25,9 @@ enum
     XSIZE_SUBDOMAIN = 48,
     YSIZE_SUBDOMAIN = 48,
     ZSIZE_SUBDOMAIN = 48,
-    XMARGIN_WALL = 6,
-    YMARGIN_WALL = 6,
-    ZMARGIN_WALL = 6,
+    XMARGIN_WALL = 10,
+    YMARGIN_WALL = 10,
+    ZMARGIN_WALL = 10,
 };
 
 const int numberdensity = 4;
