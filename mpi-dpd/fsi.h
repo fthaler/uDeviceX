@@ -32,6 +32,10 @@ class ComputeFSI : public SoluteExchange::Visitor
     cudaTextureObject_t texCellsStart;
     /* currently unused
     cudaTextureObject_t texCellsCount;*/
+    int* packstarts_padded, *packcount;
+    Particle** packstates;
+    Acceleration** packresults;
+
     bool firsttime;
 
 public:
@@ -39,6 +43,7 @@ public:
     void bind_solvent(SolventWrap wrap) { wsolvent = wrap; }
 
     ComputeFSI(MPI_Comm comm);
+    ~ComputeFSI();
 
     void bulk(std::vector<ParticlesWrap> wsolutes, cudaStream_t stream);
 
