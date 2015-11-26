@@ -33,10 +33,17 @@ class ComputeContact : public SoluteExchange::Visitor
 
     // globals moved from contact.cu
     cudaTextureObject_t texCellsStart, texCellEntries;
+    int* cnsolutes;
+    float2** csolutes;
+    float** csolutesacc;
+    int* packstarts_padded, *packcount;
+    Particle** packstates;
+    Acceleration** packresults;
 
 public:
 
     ComputeContact(MPI_Comm comm);
+    ~ComputeContact();
 
     void bind(const int * const cellsstart, const int * const cellsentries, const int ncellentries,
               std::vector<ParticlesWrap> wsolutes, cudaStream_t stream, const int * const cellscount);
