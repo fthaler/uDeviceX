@@ -22,7 +22,7 @@ class SoluteExchange
     
 public:
     
-    struct Visitor { virtual void halo(ParticlesWrap solutehalos[26], cudaStream_t stream) = 0; };
+    struct Visitor { virtual void halo(ParticlesWrap solutehalos[26], cudaStream_t stream) = 0; virtual ~Visitor() {}};
     
 protected:
     /* global variables from solute-exchange.cu, moved for use with AMPI */
