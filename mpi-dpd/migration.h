@@ -153,6 +153,8 @@ template <int B, int E, int A>
 Migratable<B, E, A>::Migratable()
 {
     memset(buffers, 0, sizeof(buffers));
+    memset(events, 0, sizeof(events));
+    memset(arrays, 0, sizeof(arrays));
 #ifdef AMPI
     MPI_Register(this, pup);
 #endif
