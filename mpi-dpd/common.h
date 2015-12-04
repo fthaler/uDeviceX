@@ -18,6 +18,12 @@
 #define cuda_printf(...) do { printf(__VA_ARGS__); } while(0)
 #endif
 
+#ifdef AMPI
+#define AMPI_YIELD(x) MPI_Yield(x)
+#else
+#define AMPI_YIELD(x)
+#endif
+
 class Globals;
 
 enum
