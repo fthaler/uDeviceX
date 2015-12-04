@@ -398,8 +398,10 @@ void SolventExchange::_pack_all(const Particle * const p, const int n, const boo
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(PackingHalo::baginfos, baginfos, sizeof(baginfos), 0, cudaMemcpyHostToDevice, stream)); // peh: added stream
     }
 
-    if (ncells)
+    if (ncells) {
     PackingHalo::fill_all<<< (ncells + 1) / 2, 32, 0, stream>>>(cellpackstarts, baginfos, p, n, required_send_bag_size);
+    AMPI_YIELD(cartcomm);
+    }
 
     CUDA_CHECK(cudaEventRecord(evfillall, stream));
 }
@@ -449,6 +451,7 @@ void SolventExchange::pack(const Particle * const p, const int n, const int * co
     PackingHalo::count_all<<<(ncells + 127) / 128, 128, 0, stream>>>(cellpackstarts, cellpacks, cellsstart, cellscount, ncells);
 
     PackingHalo::scan_diego< 32 ><<< 26, 32 * 32, 0, stream>>>(cellpacks);
+    AMPI_YIELD(cartcomm);
 
     CUDA_CHECK(cudaPeekAtLastError());
 

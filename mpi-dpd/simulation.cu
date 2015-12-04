@@ -55,8 +55,10 @@ void Simulation::_update_helper_arrays()
     xyzouvwo.resize(2 * np);
     xyzo_half.resize(np);
 
-    if (np)
+    if (np) {
     make_texture <<< (np + 1023) / 1024, 1024, 1024 * 6 * sizeof( float )>>>(xyzouvwo.data, xyzo_half.data, (float *)particles->xyzuvw.data, np );
+    AMPI_YIELD(activecomm);
+    }
 
     CUDA_CHECK(cudaPeekAtLastError());
 }
@@ -263,6 +265,7 @@ void Simulation::_remove_bodies_from_wall(CollectionBase * coll)
 
     assert(wall.is_active());
     SolidWallsKernel::fill_keys<<< (coll->pcount() + 127) / 128, 128 >>>(wall.texSDF, coll->data(), coll->pcount(), marks.data);
+    AMPI_YIELD(activecomm);
 
     vector<int> tmp(marks.size);
     CUDA_CHECK(cudaMemcpy(tmp.data(), marks.data, sizeof(int) * marks.size, cudaMemcpyDeviceToHost));
@@ -742,6 +745,7 @@ void Simulation::_update_and_bounce()
 
     if (ctcscoll)
 	ctcscoll->update_stage2_and_1(driving_acceleration, mainstream);
+    AMPI_YIELD(activecomm);
 
     timings["update"] += MPI_Wtime() - tstart;
 
@@ -755,6 +759,7 @@ void Simulation::_update_and_bounce()
 
 	if (ctcscoll)
 	    wall.bounce(ctcscoll->data(), ctcscoll->pcount(), mainstream);
+    AMPI_YIELD(activecomm);
 
 	timings["bounce-walls"] += MPI_Wtime() - tstart;
     }
@@ -1117,6 +1122,7 @@ void Simulation::run()
 
     if (ctcscoll)
 	ctcscoll->update_stage1(driving_acceleration, mainstream);
+    AMPI_YIELD(activecomm);
 
     int it;
 

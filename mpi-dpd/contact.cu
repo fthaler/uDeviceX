@@ -261,6 +261,7 @@ void ComputeContact::build_cells(std::vector<ParticlesWrap> wsolutes, cudaStream
 
 	ctr += it.n;
     }
+    AMPI_YIELD(cartcomm);
 
     compress_counts<<< (compressed_cellscount.size + 127) / 128, 128, 0, stream >>>
 	(compressed_cellscount.size, (int4 *)cellscount.data, (uchar4 *)compressed_cellscount.data);
@@ -278,6 +279,7 @@ void ComputeContact::build_cells(std::vector<ParticlesWrap> wsolutes, cudaStream
 
 	ctr += it.n;
     }
+    AMPI_YIELD(cartcomm);
 
     CUDA_CHECK(cudaPeekAtLastError());
 
@@ -467,6 +469,7 @@ void ComputeContact::bulk(std::vector<ParticlesWrap> wsolutes, cudaStream_t stre
 
 	CUDA_CHECK(cudaPeekAtLastError());
     }
+    AMPI_YIELD(cartcomm);
 }
 
 namespace KernelsContact
@@ -706,9 +709,11 @@ void ComputeContact::halo(ParticlesWrap halos[26], cudaStream_t stream)
 					   sizeof(packresults), 0, cudaMemcpyHostToDevice, stream));*/
     }
 
-    if(nremote_padded)
+    if(nremote_padded) {
     	KernelsContact::halo<<< (nremote_padded + 127) / 128, 128, 0, stream>>>
 	    (texCellsStart, texCellEntries, cnsolutes, csolutes, csolutesacc, packstarts_padded, packcount, packstates, this->packresults, nremote_padded, cellsentries.size, nsolutes, local_trunk.get_float());
+        AMPI_YIELD(cartcomm);
+    }
 
     CUDA_CHECK(cudaPeekAtLastError());
 }

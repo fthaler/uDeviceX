@@ -334,6 +334,7 @@ void SoluteExchange::_pack_attempt(cudaStream_t stream)
 
 	SolutePUP::tiny_scan<<< 1, 32, 0, stream >>>(ccapacities, failed, packscount.data + i * 26, packsoffset.data + 26 * i,
 						   packsoffset.data + 26 * (i + 1), packsstart.data + i * 27);
+    AMPI_YIELD(cartcomm);
 
 	CUDA_CHECK(cudaPeekAtLastError());
     }
@@ -345,6 +346,7 @@ void SoluteExchange::_pack_attempt(cudaStream_t stream)
     CUDA_CHECK(cudaMemcpyAsync(host_packstotalstart.data, packstotalstart.data, sizeof(int) * 27, cudaMemcpyDeviceToHost, stream));
 
     CUDA_CHECK(cudaMemcpyAsync(cbases, packstotalstart.data, sizeof(int) * 27, cudaMemcpyDeviceToDevice, stream));
+    AMPI_YIELD(cartcomm);
     //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::cbases, packstotalstart.data, sizeof(int) * 27, 0, cudaMemcpyDeviceToDevice, stream));
 
     for(int i = 0; i < wsolutes.size(); ++i)
@@ -361,6 +363,7 @@ void SoluteExchange::_pack_attempt(cudaStream_t stream)
 	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::cpaddedstarts, packsstart.data + 27 * i, sizeof(int) * 27, 0, cudaMemcpyDeviceToDevice, stream));
 
 	    SolutePUP::pack<<< 14 * 16, 128, 0, stream >>>(ccapacities, scattered_indices, failed, coffsets, ccounts, cbases, cpaddedstarts, (float2 *)it.p, it.n, (float2 *)packbuf.data, packbuf.capacity, i);
+        AMPI_YIELD(cartcomm);
 	}
     }
 
@@ -433,6 +436,7 @@ void SoluteExchange::post_p(cudaStream_t stream, cudaStream_t downloadstream)
 	    _adjust_packbuffers();
 
 	    _pack_attempt(stream);
+        AMPI_YIELD(cartcomm);
 
 	    CUDA_CHECK(cudaStreamSynchronize(stream));
 
@@ -685,6 +689,7 @@ void SoluteExchange::recv_a(cudaStream_t stream)
 	    //CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::coffsets, packsoffset.data + 26 * i, sizeof(int) * 26, 0, cudaMemcpyDeviceToDevice, stream));
 
 	    SolutePUP::unpack<<< 16 * 14, 128, 0, stream >>>(ccapacities, scattered_indices, coffsets, ccounts, cpaddedstarts, recvbags, (float *)it.a, it.n);
+        AMPI_YIELD(cartcomm);
 	}
 	CUDA_CHECK(cudaPeekAtLastError());
     }

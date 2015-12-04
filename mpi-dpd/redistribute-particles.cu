@@ -689,6 +689,7 @@ pack_attempt:
 	RedistributeParticlesKernels::scatter_halo_indices_pack<<< (nparticles + 127) / 128, 128, 0, mystream>>>(texAllParticles, pack_buffers, pack_count, nparticles);
 
     RedistributeParticlesKernels::tiny_scan<<<1, 32, 0, mystream>>>(pack_buffers, pack_count, pack_start_padded, failed, nparticles, packbuffers[0].capacity, packsizes.devptr(), failure.devptr());
+    AMPI_YIELD(cartcomm);
 
     CUDA_CHECK(cudaEventRecord(evsizes, mystream));
 
@@ -696,8 +697,10 @@ pack_attempt:
     RedistributeParticlesKernels::check_scan<<<1, 1, 0, mystream>>>(pack_start_padded);
 #endif
 
-    if (nparticles)
+    if (nparticles) {
 	RedistributeParticlesKernels::pack<<< (3 * nparticles + 127) / 128, 128, 0, mystream>>> (texAllParticlesFloat2, pack_buffers, pack_start_padded, failed, nparticles, nparticles * 3);
+    AMPI_YIELD(cartcomm);
+    }
 
     CUDA_CHECK(cudaEventRecord(evpacking, mystream));
 
@@ -797,9 +800,11 @@ void RedistributeParticles::bulk(const int nparticles, int * const cellstarts, i
 */
     subindices.resize(nparticles);
 
-    if (nparticles)
+    if (nparticles) {
     subindex_local<false><<< (nparticles + 127) / 128, 128, 0, mystream>>>
 	(nparticles, texparticledata, cellcounts, subindices.data);
+    AMPI_YIELD(cartcomm);
+    }
 /*
 #ifndef NDEBUG
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -916,6 +921,7 @@ void RedistributeParticles::recv_unpack(Particle * const particles, float4 * con
     if (compressed_cellcounts.size)
     compress_counts<<< (compressed_cellcounts.size + 127) / 128, 128, 0, mystream >>>
 	(compressed_cellcounts.size, (int4 *)cellcounts, (uchar4 *)compressed_cellcounts.data);
+    AMPI_YIELD(cartcomm);
 
     scan(compressed_cellcounts.data, compressed_cellcounts.size, mystream, (uint *)cellstarts);
 
@@ -937,6 +943,7 @@ void RedistributeParticles::recv_unpack(Particle * const particles, float4 * con
     RedistributeParticlesKernels::gather_particles<<< (nparticles + 127) / 128, 128, 0, mystream>>>
 	(texAllParticlesFloat2, scattered_indices.data, (float2 *)remote_particles.data, nhalo,
 	 ntexparticles, nparticles, (float2 *)particles, xyzouvwo, xyzo_half);
+    AMPI_YIELD(cartcomm);
 
     if (nparticles) {
         CUDA_CHECK(cudaDestroyTextureObject(texAllParticlesFloat2));
