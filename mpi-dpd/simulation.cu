@@ -219,7 +219,7 @@ void Simulation::_report(const bool verbose, const int idtimestep)
         // compute load as a mix of average PE load and VP load
         const float vp_mix = 0.1f;
         const float load = (pe_busy_time / vps_per_pe) * (1.0f - vp_mix) + host_busy_time * vp_mix;
-        MPI_Set_load(load);
+        //MPI_Set_load(load);
     }
 #endif
 
@@ -1176,6 +1176,19 @@ void Simulation::run()
 	    !((it + 1) + 1 == globals->nvtxstop) &&
 	    !(((it + 1) + 1) % globals->steps_per_report == 0) &&
 	    !((it + 1) + 1 == nsteps);
+#ifdef AMPI
+    const int synchronous_steps = globals->steps_per_report / 10;
+    const bool synchronous = it % globals->steps_per_report < synchronous_steps;
+
+    if (synchronous && mainstream) {
+        CUDA_CHECK(cudaStreamDestroy(mainstream));
+        mainstream = 0;
+        MPI_Start_measure();
+    } else if (!synchronous && !mainstream) {
+        CUDA_CHECK(cudaStreamCreate(&mainstream));
+        MPI_Stop_measure();
+    }
+#endif
 
 	if (lockstep_OK)
 	{
