@@ -5,18 +5,20 @@ ARCH_VAL ?= compute_35
 CODE_VAL ?= sm_35
 
 NVCCFLAGS += -I$(HDF5_DIR)/include -Xcudafe "--diag_suppress=unrecognized_gcc_pragma"
-NVCCFLAGS +=  -arch $(ARCH_VAL) -code $(CODE_VAL) -O3 -use_fast_math -g
-NVCCFLAGS += -I$(CHARMDIR)/include
-CXXFLAGS += -L../cuda-dpd/dpd -L../cuda-rbc/ -L../cuda-ctc/ -O3 -g  -std=c++11
-CXXFLAGS += -I$(CHARMDIR)/include
+NVCCFLAGS +=  -arch $(ARCH_VAL) -code $(CODE_VAL) -O3 -use_fast_math -g -DNDEBUG
+CXXFLAGS += -L../cuda-dpd/dpd -L../cuda-rbc/ -L../cuda-ctc/ -O3 -g  -std=c++11 -DNDEBUG
 NVCCFLAGS += -I../cuda-dpd/dpd -I../cuda-rbc/ -I../cuda-ctc
 #NVCCFLAGS +=  -DREPORT_TOPOLOGY $(CRAY_PMI_INCLUDE_OPTS)
 #NVCCFLAGS += -DCUSTOM_REORDERING=1
 
 # AMPI-specific
+ifdef CHARMDIR
 AMPICXX ?= $(CHARMDIR)/bin/ampicxx
 CXXFLAGS += -module CommonLBs -lampiromio
-# currently no IO is supported
+NVCCFLAGS += -I$(CHARMDIR)/include
+CXXFLAGS += -I$(CHARMDIR)/include
+endif
+# currently IO is disabled by default
 mpio ?= 0
 mpithread ?= 0
 h5part ?= 0
