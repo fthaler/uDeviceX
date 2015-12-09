@@ -35,6 +35,8 @@ void CellListsBase::build(Particle * const p, const int n, cudaStream_t stream, 
 		build_clists_vanilla((float * )p, n, 1, LX, LY, LZ, -LX/2, -LY/2, -LZ/2, order, start, count,  NULL, stream, (float *)src);
 	    else
 		build_clists((float * )p, n, 1, LX, LY, LZ, -LX/2, -LY/2, -LZ/2, order, start, count,  NULL, stream, (float *)src);
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+        CUDA_CHECK(cudaPeekAtLastError());
 	}
 	else
 	{
