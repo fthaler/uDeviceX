@@ -384,6 +384,9 @@ void SolventExchange::_pack_all(const Particle * const p, const int n, const boo
 
     CUDA_CHECK(cudaMemcpyAsync(this->baginfos, baginfos, sizeof(baginfos), cudaMemcpyHostToDevice, stream));
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(PackingHalo::baginfos, baginfos, sizeof(baginfos), 0, cudaMemcpyHostToDevice, stream)); // peh: added stream
+
+    AMPI_YIELD(cartcomm);
+    CUDA_CHECK(cudaStreamSynchronize(stream));
     }
 
     if (ncells) {

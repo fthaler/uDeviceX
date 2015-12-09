@@ -28,7 +28,6 @@ class SolventExchange : public GlobalsInjector
     int** srccells, **dstcells;
     PackingHalo::SendBagInfo* baginfos;
 
-    MPI_Comm cartcomm;
     MPI_Request sendreq[26 * 2], recvreq[26], sendcellsreq[26], recvcellsreq[26], sendcountreq[26], recvcountreq[26];
     
     int recv_tags[26], recv_counts[26], nlocal, nactive;
@@ -115,6 +114,7 @@ protected:
     void _cancel_recv();
 
 public:
+    MPI_Comm cartcomm;
     
     SolventExchange(Globals* globals, MPI_Comm cartcomm, const int basetag);
 

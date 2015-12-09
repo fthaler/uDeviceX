@@ -194,6 +194,9 @@ void ComputeContact::bind(const int * const cellsstart, const int * const cellen
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(KernelsContact::csolutes, ps, sizeof(float2 *) * n, 0, cudaMemcpyHostToDevice, stream));
     CUDA_CHECK(cudaMemcpyAsync(csolutesacc, as, sizeof(float*) * n, cudaMemcpyHostToDevice, stream));
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(KernelsContact::csolutesacc, as, sizeof(float *) * n, 0, cudaMemcpyHostToDevice, stream));
+
+    AMPI_YIELD(cartcomm);
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 }
 
 void ComputeContact::build_cells(std::vector<ParticlesWrap> wsolutes, cudaStream_t stream)

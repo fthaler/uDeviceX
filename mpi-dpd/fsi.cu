@@ -579,6 +579,9 @@ void ComputeFSI::halo(ParticlesWrap halos[26], cudaStream_t stream)
 					   sizeof(packresults), 0, cudaMemcpyHostToDevice, stream));*/
     }
 
+    AMPI_YIELD(cartcomm);
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+
     if(nremote_padded)
     	KernelsFSI::interactions_halo<<< (nremote_padded + 127) / 128, 128, 0, stream>>>
 	    (texSolventParticles, texCellsStart, packstarts_padded, packcount, packstates, this->packresults, nremote_padded, wsolvent.n, (float *)wsolvent.a, local_trunk.get_float());

@@ -237,7 +237,7 @@ namespace BipsBatch
     CUDA_CHECK(cudaMemcpyAsync(batchinfos, infos, sizeof(BatchInfo) * 26, cudaMemcpyHostToDevice, uploadstream));
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(batchinfos, infos, sizeof(BatchInfo) * 26, 0, cudaMemcpyHostToDevice, uploadstream));
 
-	static unsigned int hstart_padded[27];
+	unsigned int hstart_padded[27];
 
 	hstart_padded[0] = 0;
 	for(int i = 0; i < 26; ++i)
@@ -245,6 +245,9 @@ namespace BipsBatch
 
     CUDA_CHECK(cudaMemcpyAsync(start, hstart_padded, sizeof(hstart_padded), cudaMemcpyHostToDevice, uploadstream));
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(start, hstart_padded, sizeof(hstart_padded), 0, cudaMemcpyHostToDevice, uploadstream));
+
+    AMPI_YIELD(MPI_COMM_WORLD);
+    CUDA_CHECK(cudaStreamSynchronize(uploadstream));
 
 	const int nthreads = 2 * hstart_padded[26];
 
@@ -342,7 +345,7 @@ void ComputeDPD::remote_interactions(const Particle * const p, const int n, Acce
 
     CUDA_CHECK(cudaPeekAtLastError());
 
-    static BipsBatch::BatchInfo infos[26];
+    BipsBatch::BatchInfo infos[26];
 
     for(int i = 0; i < 26; ++i)
     {
@@ -368,5 +371,7 @@ void ComputeDPD::remote_interactions(const Particle * const p, const int n, Acce
 
     BipsBatch::interactions(start, batchinfos, aij, gammadpd, sigma, 1. / sqrt(dt), infos, stream, uploadstream, (float *)a, n);
 
+    AMPI_YIELD(cartcomm);
+    CUDA_CHECK(cudaStreamSynchronize(uploadstream));
     CUDA_CHECK(cudaPeekAtLastError());
 }

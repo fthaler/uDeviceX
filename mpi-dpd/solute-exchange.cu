@@ -655,8 +655,10 @@ void SoluteExchange::recv_a(cudaStream_t stream)
 	for(int i = 0; i < 26; ++i)
 	    recvbags[i] = (float *)local[i].result.devptr;
 
-    CUDA_CHECK(cudaMemcpyAsync(this->recvbags, recvbags, sizeof(recvbags), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpyAsync(this->recvbags, recvbags, sizeof(recvbags), cudaMemcpyHostToDevice, stream));
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(SolutePUP::recvbags, recvbags, sizeof(recvbags), 0, cudaMemcpyHostToDevice, stream));
+    AMPI_YIELD(cartcomm);
+    CUDA_CHECK(cudaStreamSynchronize(stream));
     }
 
     _wait(reqrecvA);

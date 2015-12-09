@@ -714,8 +714,10 @@ pack_attempt:
 	goto pack_attempt;
     }
 
-    if (nparticles)
+    if (nparticles) {
+        CUDA_CHECK(cudaStreamSynchronize(mystream));
         CUDA_CHECK(cudaDestroyTextureObject(texAllParticles));
+    }
 
     CUDA_CHECK(cudaPeekAtLastError());
 }
@@ -823,7 +825,7 @@ int RedistributeParticles::recv_count(cudaStream_t mystream, float& host_idle_ti
     host_idle_time += _waitall(recvcountreq, nactiveneighbors);
 
     {
-	static int usize[27], ustart[28], ustart_padded[28];
+	int usize[27], ustart[28], ustart_padded[28];
 
 	usize[0] = 0;
 	for(int i = 1; i < 27; ++i)
@@ -849,6 +851,9 @@ int RedistributeParticles::recv_count(cudaStream_t mystream, float& host_idle_ti
     CUDA_CHECK(cudaMemcpyAsync(unpack_start_padded, ustart_padded, sizeof(int) * 28, cudaMemcpyHostToDevice, mystream));
 	/*CUDA_CHECK(cudaMemcpyToSymbolAsync(RedistributeParticlesKernels::unpack_start_padded, ustart_padded,
 					   sizeof(int) * 28, 0, cudaMemcpyHostToDevice, mystream));*/
+
+    AMPI_YIELD(cartcomm);
+    CUDA_CHECK(cudaStreamSynchronize(mystream));
     }
 
     {
@@ -929,6 +934,7 @@ void RedistributeParticles::recv_unpack(Particle * const particles, float4 * con
     AMPI_YIELD(cartcomm);
 
     if (nparticles) {
+        CUDA_CHECK(cudaStreamSynchronize(mystream));
         CUDA_CHECK(cudaDestroyTextureObject(texAllParticlesFloat2));
         texAllParticlesFloat2 = 0;
     }
