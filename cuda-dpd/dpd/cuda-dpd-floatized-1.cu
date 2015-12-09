@@ -23,15 +23,15 @@ struct InfoDPD {
     uint nxyz;
     float3 domainsize, invdomainsize, domainstart;
     float invrc, aij, gamma, sigmaf;
-    float * axayaz;
-    float seed;
+    /*float * axayaz;
+    float seed;*/
 };
 
 __constant__ InfoDPD info;
 
-texture<float4, cudaTextureType1D> texParticlesF4;
+/*texture<float4, cudaTextureType1D> texParticlesF4;
 texture<ushort4, cudaTextureType1D, cudaReadModeNormalizedFloat> texParticlesH4;
-texture<uint2, cudaTextureType1D> texStartAndCount;
+texture<uint2, cudaTextureType1D> texStartAndCount;*/
 
 #define TRANSPOSED_ATOMICS
 //#define ONESTEP
@@ -44,7 +44,7 @@ texture<uint2, cudaTextureType1D> texStartAndCount;
 #define _ZCPB_ 1
 #define CPB (_XCPB_ * _YCPB_ * _ZCPB_)
 
-__device__ float3 _dpd_interaction( const int dpid, const float4 xdest, const float4 udest, const float4 xsrc, const float4 usrc, const int spid )
+__device__ float3 _dpd_interaction( const float seed, const int dpid, const float4 xdest, const float4 udest, const float4 xsrc, const float4 usrc, const int spid )
 {
     const float _xr = xdest.x - xsrc.x;
     const float _yr = xdest.y - xsrc.y;
@@ -67,7 +67,7 @@ __device__ float3 _dpd_interaction( const int dpid, const float4 xdest, const fl
         yr * ( udest.y - usrc.y ) +
         zr * ( udest.z - usrc.z );
 
-    const float myrandnr = Logistic::mean0var1( info.seed, xmin( spid, dpid ), xmax( spid, dpid ) );
+    const float myrandnr = Logistic::mean0var1( seed, xmin( spid, dpid ), xmax( spid, dpid ) );
 
     const float strength = info.aij * wc - ( info.gamma * wr * rdotv + info.sigmaf * myrandnr ) * wr;
 
@@ -113,7 +113,7 @@ __device__ char4 tid2ind[32] = {
 
 // TODO: modify compiled PTX to replace integer comparison in branch statements
 
-__forceinline__ __device__ void core_ytang( const uint dststart, const uint pshare, const uint tid, const uint spidext )
+__forceinline__ __device__ void core_ytang(cudaTextureObject_t texParticlesF4, float* axayaz, const float seed, const uint dststart, const uint pshare, const uint tid, const uint spidext )
 {
     uint item;
     const uint offset = xmad( tid, 4.f, pshare );
@@ -124,18 +124,18 @@ __forceinline__ __device__ void core_ytang( const uint dststart, const uint psha
 
     const uint dentry = xscale( dpid, 2.f );
     const uint sentry = xscale( spid, 2.f );
-    const float4 xdest = tex1Dfetch( texParticlesF4,       dentry );
-    const float4 xsrc  = tex1Dfetch( texParticlesF4,       sentry );
-    const float4 udest = tex1Dfetch( texParticlesF4, xadd( dentry, 1u ) );
-    const float4 usrc  = tex1Dfetch( texParticlesF4, xadd( sentry, 1u ) );
-    const float3 f = _dpd_interaction( dpid, xdest, udest, xsrc, usrc, spid );
+    const float4 xdest = tex1Dfetch<float4>( texParticlesF4,       dentry );
+    const float4 xsrc  = tex1Dfetch<float4>( texParticlesF4,       sentry );
+    const float4 udest = tex1Dfetch<float4>( texParticlesF4, xadd( dentry, 1u ) );
+    const float4 usrc  = tex1Dfetch<float4>( texParticlesF4, xadd( sentry, 1u ) );
+    const float3 f = _dpd_interaction( seed, dpid, xdest, udest, xsrc, usrc, spid );
 
     // the overhead of transposition acc back
     // can be completely killed by changing the integration kernel
 #ifdef TRANSPOSED_ATOMICS
     uint off  = dpid & 0x0000001FU;
     uint base = xdiv( dpid, 1 / 32.f );
-    float* acc = info.axayaz + xmad( base, 96.f, off );
+    float* acc = axayaz + xmad( base, 96.f, off );
     atomicAdd( acc   , f.x );
     atomicAdd( acc + 32, f.y );
     atomicAdd( acc + 64, f.z );
@@ -143,19 +143,19 @@ __forceinline__ __device__ void core_ytang( const uint dststart, const uint psha
     if( spid < spidext ) {
         uint off  = spid & 0x0000001FU;
         uint base = xdiv( spid, 1 / 32.f );
-        float* acc = info.axayaz + xmad( base, 96.f, off );
+        float* acc = axayaz + xmad( base, 96.f, off );
         atomicAdd( acc   , -f.x );
         atomicAdd( acc + 32, -f.y );
         atomicAdd( acc + 64, -f.z );
     }
 #else
-    float* acc = info.axayaz + dpid * 3;
+    float* acc = axayaz + dpid * 3;
     atomicAdd( acc    , f.x );
     atomicAdd( acc + 1, f.y );
     atomicAdd( acc + 2, f.z );
 
     if( spid < spidext ) {
-        float* acc = info.axayaz + spid * 3;
+        float* acc = axayaz + spid * 3;
         atomicAdd( acc    , -f.x );
         atomicAdd( acc + 1, -f.y );
         atomicAdd( acc + 2, -f.z );
@@ -169,7 +169,7 @@ __forceinline__ __device__ void core_ytang( const uint dststart, const uint psha
 #define MYWPB   (4)
 
 __global__  __launch_bounds__( 32 * MYWPB, 16 )
-void _dpd_forces_symm_merged()
+void _dpd_forces_symm_merged(cudaTextureObject_t texParticlesF4, cudaTextureObject_t texParticlesH4, cudaTextureObject_t texStartAndCount, float* axayaz, const float seed)
 {
 
     asm volatile( ".shared .u32 smem[512];" ::: "memory" );
@@ -230,11 +230,11 @@ void _dpd_forces_symm_merged()
              "    setp.ge.and.f32 vc, %5, 0.0, vc;"
              "    setp.lt.and.s32 vc, %4, %6, vc;"
              "    selp.s32 %0, 1, 0, vc;"
-             "@vc tex.1d.v4.s32.s32 {%0, %1, foo, bar}, [texStartAndCount, %4];"
+             "@vc tex.a1d.v4.s32.s32 {%0, %1, foo, bar}, [%7, %4];"
              "}" :
              "+r"( mystart ), "+r"( mycount )  :
              "f"( u2f( tid ) ), "f"( u2f( 14u ) ), "r"( cid ), "f"( i2f( cid ) ),
-             "r"( info.nxyz ) );
+             "r"( info.nxyz ), "l"(texStartAndCount) );
         myscan  = mycount;
         asm volatile( "st.volatile.shared.u32 [%0], %1;" ::
                       "r"( xmad( tid, 8.f, pshare ) ),
@@ -321,11 +321,11 @@ void _dpd_forces_symm_merged()
                           "   mov.b32           %0, mystart;"
                           "}" : "=r"( spid ) : "f"( u2f( pid ) ), "f"( u2f( 9u ) ), "f"( u2f( 3u ) ), "f"( u2f( pshare ) ), "f"( u2f( pid ) ), "f"( u2f( nsrc ) ) );
 
-            const float4 xsrc = tex1Dfetch( texParticlesH4, xmin( spid, lastdst ) );
+            const float4 xsrc = tex1Dfetch<float4>( texParticlesH4, xmin( spid, lastdst ) );
 
             for( uint dpid = dststart; dpid < lastdst; dpid = xadd( dpid, 1u ) ) {
 
-                const float4 xdest = tex1Dfetch( texParticlesH4, dpid );
+                const float4 xdest = tex1Dfetch<float4>( texParticlesH4, dpid );
                 const float dx = xdest.x - xsrc.x;
                 const float dy = xdest.y - xsrc.y;
                 const float dz = xdest.z - xsrc.z;
@@ -350,7 +350,7 @@ void _dpd_forces_symm_merged()
 
                 nb = xadd( nb, i2u( __popc( overview ) ) );
                 if( nb >= 32u ) {
-                    core_ytang( dststart, pshare, tid, spidext );
+                    core_ytang(texParticlesF4, axayaz, seed, dststart, pshare, tid, spidext );
                     nb = xsub( nb, 32u );
 
                     //* was: queue[tid] = queue[tid+32];
@@ -364,7 +364,7 @@ void _dpd_forces_symm_merged()
         }
 
         if( tid < nb ) {
-            core_ytang( dststart, pshare, tid, spidext );
+            core_ytang(texParticlesF4, axayaz, seed, dststart, pshare, tid, spidext );
         }
         nb = 0;
     }
@@ -385,13 +385,13 @@ __global__ void make_texture2( uint2 *start_and_count, const int *start, const i
     }
 }
 
-__global__ void check_acc( const int np )
+__global__ void check_acc( const float* axayaz, const int np )
 {
     double sx = 0, sy = 0, sz = 0;
     for( int i = 0; i < np; i++ ) {
-        double ax = info.axayaz[i * 3 + 0];
-        double ay = info.axayaz[i * 3 + 1];
-        double az = info.axayaz[i * 3 + 2];
+        double ax = axayaz[i * 3 + 0];
+        double ay = axayaz[i * 3 + 1];
+        double az = axayaz[i * 3 + 2];
         if( ax != ax || ay != ay || az != az ) {
             printf( "particle %d: %f %f %f\n", i, ax, ay, az );
         }
@@ -402,23 +402,23 @@ __global__ void check_acc( const int np )
     printf( "ACC: %+.7lf %+.7lf %+.7lf\n", sx, sy, sz );
 }
 
-__global__ void check_acc_transposed( const int np )
+__global__ void check_acc_transposed( const float* axayaz, const int np )
 {
     double sx = 0, sy = 0, sz = 0;
     for( int i = 0; i < np; i++ ) {
         int base = i / 32;
         int off = i % 32;
         int p = base * 96 + off;
-        sx += info.axayaz[p];
-        sy += info.axayaz[p + 32];
-        sz += info.axayaz[p + 64];
+        sx += axayaz[p];
+        sy += axayaz[p + 32];
+        sz += axayaz[p + 64];
     }
     printf( "ACC-TRANSPOSED: %+.7lf %+.7lf %+.7lf\n", sx, sy, sz );
 }
 
 
 __global__  __launch_bounds__( 1024, 2 )
-void transpose_acc( const int np )
+void transpose_acc( float* axayaz, const int np )
 {
     __shared__ volatile float  smem[32][96];
     const uint lane = threadIdx.x % 32;
@@ -426,12 +426,12 @@ void transpose_acc( const int np )
 
     for( uint i = ( blockIdx.x * blockDim.x + threadIdx.x ) & 0xFFFFFFE0U; i < np; i += blockDim.x * gridDim.x ) {
         const uint base = xmad( i, 3.f, lane );
-        smem[warpid][lane   ] = info.axayaz[ base      ];
-        smem[warpid][lane + 32] = info.axayaz[ base + 32 ];
-        smem[warpid][lane + 64] = info.axayaz[ base + 64 ];
-        info.axayaz[ base      ] = smem[warpid][ xmad( __IMOD( lane + 0, 3 ), 32.f, ( lane + 0 ) / 3 ) ];
-        info.axayaz[ base + 32 ] = smem[warpid][ xmad( __IMOD( lane + 32, 3 ), 32.f, ( lane + 32 ) / 3 ) ];
-        info.axayaz[ base + 64 ] = smem[warpid][ xmad( __IMOD( lane + 64, 3 ), 32.f, ( lane + 64 ) / 3 ) ];
+        smem[warpid][lane   ] = axayaz[ base      ];
+        smem[warpid][lane + 32] = axayaz[ base + 32 ];
+        smem[warpid][lane + 64] = axayaz[ base + 64 ];
+        axayaz[ base      ] = smem[warpid][ xmad( __IMOD( lane + 0, 3 ), 32.f, ( lane + 0 ) / 3 ) ];
+        axayaz[ base + 32 ] = smem[warpid][ xmad( __IMOD( lane + 32, 3 ), 32.f, ( lane + 32 ) / 3 ) ];
+        axayaz[ base + 64 ] = smem[warpid][ xmad( __IMOD( lane + 64, 3 ), 32.f, ( lane + 64 ) / 3 ) ];
     }
 }
 
@@ -460,7 +460,7 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
     const int ncells = nx * ny * nz;
 
     if( !fdpd_init ) {
-        texStartAndCount.channelDesc = cudaCreateChannelDesc<uint2>();
+        /*texStartAndCount.channelDesc = cudaCreateChannelDesc<uint2>();
         texStartAndCount.filterMode  = cudaFilterModePoint;
         texStartAndCount.mipmapFilterMode = cudaFilterModePoint;
         texStartAndCount.normalized = 0;
@@ -473,7 +473,7 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
         texParticlesH4.channelDesc = cudaCreateChannelDescHalf4();
         texParticlesH4.filterMode = cudaFilterModePoint;
         texParticlesH4.mipmapFilterMode = cudaFilterModePoint;
-        texParticlesH4.normalized = 0;
+        texParticlesH4.normalized = 0;*/
 
         CUDA_CHECK( cudaFuncSetCacheConfig( _dpd_forces_symm_merged, cudaFuncCachePreferEqual ) );
         
@@ -500,27 +500,80 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
         fdpd_init = true;
     }
 
-    static InfoDPD c;
+    InfoDPD c;
 
-    size_t textureoffset;
+    //size_t textureoffset;
    
-    static uint2 *start_and_count;
-    static int last_nc;
+    uint2 *start_and_count;
+    /*int last_nc;
     if( !start_and_count || last_nc < ncells ) {
         if( start_and_count ) {
             cudaFree( start_and_count );
-        }
-        cudaMalloc( &start_and_count, sizeof( uint2 )*ncells );
-        last_nc = ncells;
+        }*/
+        CUDA_CHECK(cudaMalloc( &start_and_count, sizeof( uint2 )*ncells ));
+        /*last_nc = ncells;
+    }*/
+
+    cudaTextureObject_t texParticlesF4;
+    {
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) xyzouvwo;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<float4>();
+        resDesc.res.linear.sizeInBytes = sizeof(float) * 8 * np;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+         
+        CUDA_CHECK(cudaCreateTextureObject(&texParticlesF4,
+                                           &resDesc, &texDesc, NULL));
+    }
+    cudaTextureObject_t texParticlesH4;
+    {
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) xyzo_half;
+        resDesc.res.linear.desc = cudaCreateChannelDescHalf4();
+        resDesc.res.linear.sizeInBytes = sizeof(ushort4) * np;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+         
+        CUDA_CHECK(cudaCreateTextureObject(&texParticlesH4,
+                                           &resDesc, &texDesc, NULL));
     }
 
-    CUDA_CHECK( cudaBindTexture( &textureoffset, &texParticlesF4, xyzouvwo,  &texParticlesF4.channelDesc, sizeof( float ) * 8 * np ) );
+    /*CUDA_CHECK( cudaBindTexture( &textureoffset, &texParticlesF4, xyzouvwo,  &texParticlesF4.channelDesc, sizeof( float ) * 8 * np ) );
     assert( textureoffset == 0 );
     CUDA_CHECK( cudaBindTexture( &textureoffset, &texParticlesH4, xyzo_half, &texParticlesH4.channelDesc, sizeof( ushort4 ) * np ) );
-    assert( textureoffset == 0 );
+    assert( textureoffset == 0 );*/
     make_texture2 <<< 64, 512, 0, stream>>>( start_and_count, cellsstart, cellscount, ncells );
-    CUDA_CHECK( cudaBindTexture( &textureoffset, &texStartAndCount, start_and_count, &texStartAndCount.channelDesc, sizeof( uint2 ) * ncells ) );
-    assert( textureoffset == 0 );
+    /*CUDA_CHECK( cudaBindTexture( &textureoffset, &texStartAndCount, start_and_count, &texStartAndCount.channelDesc, sizeof( uint2 ) * ncells ) );
+    assert( textureoffset == 0 );*/
+
+    cudaTextureObject_t texStartAndCount;
+    {
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) start_and_count;
+        resDesc.res.linear.desc = cudaCreateChannelDescHalf4();
+        resDesc.res.linear.sizeInBytes = sizeof(uint2) * ncells;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+         
+        CUDA_CHECK(cudaCreateTextureObject(&texStartAndCount,
+                                           &resDesc, &texDesc, NULL));
+    }
 
     c.ncells = make_int3( nx, ny, nz );
     c.nxyz = nx * ny * nz;
@@ -531,8 +584,8 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
     c.aij = aij;
     c.gamma = gamma;
     c.sigmaf = sigma * invsqrtdt;
-    c.axayaz = axayaz;
-    c.seed = seed;
+    /*c.axayaz = axayaz;
+    c.seed = seed;*/
 
     if (!is_mps_enabled)
 	CUDA_CHECK( cudaMemcpyToSymbolAsync( info, &c, sizeof( c ), 0, cudaMemcpyHostToDevice, stream ) );
@@ -553,17 +606,17 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
     CUDA_CHECK( cudaMemsetAsync( axayaz, 0, sizeof( float )* np32 * 3, stream ) );
 
     if( c.ncells.x % MYCPBX == 0 && c.ncells.y % MYCPBY == 0 && c.ncells.z % MYCPBZ == 0 ) {
-        _dpd_forces_symm_merged <<< dim3( c.ncells.x / MYCPBX, c.ncells.y / MYCPBY, c.ncells.z / MYCPBZ ), dim3( 32, MYWPB ), 0, stream >>> ();
+        _dpd_forces_symm_merged <<< dim3( c.ncells.x / MYCPBX, c.ncells.y / MYCPBY, c.ncells.z / MYCPBZ ), dim3( 32, MYWPB ), 0, stream >>> (texParticlesF4, texParticlesH4, texStartAndCount, axayaz, seed);
 #ifdef TRANSPOSED_ATOMICS
-        // check_acc_transposed<<<1, 1, 0, stream>>>( np );
-        transpose_acc <<< 28, 1024, 0, stream>>>( np );
+        // check_acc_transposed<<<1, 1, 0, stream>>>( axayaz, np );
+        transpose_acc <<< 28, 1024, 0, stream>>>( axayaz, np );
 #endif
     } else {
         fprintf( stderr, "Incompatible grid config\n" );
     }
 
 #ifdef ONESTEP
-    check_acc <<< 1, 1, 0, stream>>>( np );
+    check_acc <<< 1, 1, 0, stream>>>( axayaz, np );
     CUDA_CHECK( cudaDeviceSynchronize() );
     CUDA_CHECK( cudaDeviceReset() );
     MPI_Finalize();
@@ -580,6 +633,15 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
         printf( "elapsed time for DPD-BULK kernel: %.2f ms\n", tms );
     }
 #endif
+#ifdef AMPI
+    AMPI_Yield(MPI_COMM_WORLD);
+#endif
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+    CUDA_CHECK(cudaFree(start_and_count));
+
+    CUDA_CHECK(cudaDestroyTextureObject(texParticlesF4));
+    CUDA_CHECK(cudaDestroyTextureObject(texParticlesH4));
+    CUDA_CHECK(cudaDestroyTextureObject(texStartAndCount));
 
     CUDA_CHECK( cudaPeekAtLastError() );
 }
