@@ -26,18 +26,6 @@ namespace PackingHalo
 	Particle * dbag, * hbag;
     };
 
-    /* moved to solvent-exchange.h for use with AMPI
-    int ncells;
-
-    __constant__ int cellpackstarts[27];
-
-    __constant__ CellPackSOA cellpacks[26];
-
-    __constant__ int * srccells[26 * 2], * dstcells[26 * 2];
-
-    __constant__ SendBagInfo baginfos[26];
-    */
-
     __global__ void count_all(const int* cellpackstarts, const CellPackSOA* cellpacks, const int * const cellsstart, const int * const cellscount, const int ntotalcells)
     {
 	assert(blockDim.x * gridDim.x >= ntotalcells);

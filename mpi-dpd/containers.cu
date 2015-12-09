@@ -19,12 +19,6 @@
 #include "io.h"
 #include "ctc.h"
 
-/* moved static variables to globals.h for use with AMPI
-int (*CollectionRBC::indices)[3] = NULL, CollectionRBC::ntriangles = -1, CollectionRBC::nvertices = -1;
-
-int (*CollectionCTC::indices)[3] = NULL, CollectionCTC::ntriangles = -1, CollectionCTC::nvertices = -1;
-*/
-
 namespace ParticleKernels
 {
     __global__ void update_stage1(Particle * p, Acceleration * a, int n, float dt,

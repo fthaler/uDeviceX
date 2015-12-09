@@ -32,11 +32,6 @@ namespace BipsBatch
 	HaloType halotype;
     };
 
-    /* moved to dpd.h as class members for use with AMPI
-    __constant__ unsigned int start[27];
-    __constant__ BatchInfo batchinfos[26];
-    */
-
     __global__ void
     interaction_kernel(const unsigned* start, const BatchInfo* batchinfos, const float aij, const float gamma, const float sigmaf,
 		       const int ndstall, float * const adst, const int sizeadst)

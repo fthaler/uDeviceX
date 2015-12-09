@@ -346,11 +346,6 @@ void ComputeFSI::bulk(std::vector<ParticlesWrap> wsolutes, cudaStream_t stream)
 
 namespace KernelsFSI
 {
-    /* moved to fsi.h for use with AMPI
-    __constant__ int packstarts_padded[27], packcount[26];
-    __constant__ Particle * packstates[26];
-    __constant__ Acceleration * packresults[26];
-    */
 
     __global__ 	void interactions_halo(cudaTextureObject_t texSolventParticles, cudaTextureObject_t texCellsStart, const int* packstarts_padded, const int* packcount, Particle* const* packstates, Acceleration* const* packresults, const int nparticles_padded, const int nsolvent, float * const accsolvent, const float seed)
     {

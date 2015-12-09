@@ -17,12 +17,6 @@
 #include "common-kernels.h"
 #include "solute-exchange.h"
 
-namespace SolutePUP
-{
-    /* replaced by class-variables for use with AMPI
-    __constant__ int ccapacities[26], * scattered_indices[26];*/
-}
-
 SoluteExchange::SoluteExchange(MPI_Comm _cartcomm) :
 iterationcount(-1), packstotalstart(27), host_packstotalstart(27), host_packstotalcount(26)
 {
@@ -84,11 +78,7 @@ iterationcount(-1), packstotalstart(27), host_packstotalstart(27), host_packstot
 
 namespace SolutePUP
 {
-    /*__device__ bool failed;*/
-
     __global__ void init(bool* failed) { *failed = false; }
-
-    /*__constant__ int coffsets[26];*/
 
     __global__ void scatter_indices(const int* ccapacities, int** scattered_indices, const int* coffsets, const float2 * const particles, const int nparticles, int * const counts)
     {
@@ -221,8 +211,6 @@ namespace SolutePUP
 		paddedstarts[tid] = myscan - mycount;
 	}
     }
-
-    /*__constant__ int ccounts[26], cbases[27], cpaddedstarts[27];*/
 
     __global__ void pack(const int* ccapacities, int** scattered_indices, const bool* failed, const int* coffsets, const int* ccounts, const int* cbases, const int* cpaddedstarts, const float2 * const particles, const int nparticles, float2 * const buffer, const int nbuffer, const int soluteid)
     {
@@ -607,8 +595,6 @@ void SoluteExchange::post_a()
 
 namespace SolutePUP
 {
-    /*__constant__ float * recvbags[26];*/
-
     __global__ void unpack(const int* ccapacities, int** scattered_indices, const int* coffsets, const int* ccounts, const int* cpaddedstarts, float** recvbags, float * const accelerations, const int nparticles)
     {
 	const int npack_padded = cpaddedstarts[26];

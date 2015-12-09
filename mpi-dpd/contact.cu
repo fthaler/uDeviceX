@@ -39,32 +39,6 @@ namespace KernelsContact
     struct Params { float gamma, sigmaf, rc2; };
 
     __constant__ Params params;
-
-    /* moved to class member variables in contact.h for use with AMPI
-    texture<int, cudaTextureType1D> texCellsStart, texCellEntries;
-    */
-
-    /*__global__ void bulk_3tpp(const float2 * const particles, const int np, const int ncellentries, const int nsolutes,
-			      float * const acc, const float seed, const int mysoluteid);
-
-    __global__ 	void halo(const int nparticles_padded, const int ncellentries, const int nsolutes, const float seed);*/
-
-    /* currently unused
-    void setup()
-    {
-	texCellsStart.channelDesc = cudaCreateChannelDesc<int>();
-	texCellsStart.filterMode = cudaFilterModePoint;
-	texCellsStart.mipmapFilterMode = cudaFilterModePoint;
-	texCellsStart.normalized = 0;
-
-	texCellEntries.channelDesc = cudaCreateChannelDesc<int>();
-	texCellEntries.filterMode = cudaFilterModePoint;
-	texCellEntries.mipmapFilterMode = cudaFilterModePoint;
-	texCellEntries.normalized = 0;
-
-	CUDA_CHECK(cudaFuncSetCacheConfig(bulk_3tpp, cudaFuncCachePreferL1));
-	CUDA_CHECK(cudaFuncSetCacheConfig(halo, cudaFuncCachePreferL1));
-    }*/
 }
 
 ComputeContact::ComputeContact(MPI_Comm comm):
@@ -145,11 +119,6 @@ namespace KernelsContact
 
 	entrycells[slot] = myentrycell;
     }
-
-    /* moved to contact.h for use with AMPI
-    __constant__ int cnsolutes[maxsolutes];
-    __constant__ const float2 * csolutes[maxsolutes];
-    __constant__ float * csolutesacc[maxsolutes]; */
 }
 
 void ComputeContact::bind(const int * const cellsstart, const int * const cellentries, const int ncellentries,
@@ -474,12 +443,6 @@ void ComputeContact::bulk(std::vector<ParticlesWrap> wsolutes, cudaStream_t stre
 
 namespace KernelsContact
 {
-    /* moved to contact.h for use with AMPI
-    __constant__ int packstarts_padded[27], packcount[26];
-    __constant__ Particle * packstates[26];
-    __constant__ Acceleration * packresults[26];
-    */
-
     __global__ 	void halo(cudaTextureObject_t texCellsStart, cudaTextureObject_t texCellEntries, const int* cnsolutes, float2* const * csolutes, float* const * csolutesacc, const int* packstarts_padded, const int* packcount, Particle* const * packstates, Acceleration* const * packresults, const int nparticles_padded, const int ncellentries, const int nsolutes, const float seed)
     {
 	assert(blockDim.x * gridDim.x >= nparticles_padded);

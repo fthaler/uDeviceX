@@ -26,23 +26,6 @@ using namespace std;
 
 namespace RedistributeParticlesKernels
 {
-    /* moved to redistribute-particles.h as class members for AMPI
-    __constant__ RedistributeParticles::PackBuffer pack_buffers[27];
-
-    __constant__ RedistributeParticles::UnpackBuffer unpack_buffers[27];
-
-    __device__ int pack_count[27], pack_start_padded[28];
-
-    __constant__ int unpack_start[28], unpack_start_padded[28];
-
-    __device__ bool failed;
-
-    int ntexparticles = 0;
-    float2 * texparticledata;
-    texture<float, cudaTextureType1D> texAllParticles;
-    texture<float2, cudaTextureType1D> texAllParticlesFloat2;
-    */
-
 #if !defined(__CUDA_ARCH__)
 #warning __CUDA_ARCH__ not defined! assuming 350
 #define _ACCESS(x) __ldg(x)

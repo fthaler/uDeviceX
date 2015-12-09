@@ -143,49 +143,11 @@ inline void mpiAssert(int code, const char *file, int line, bool abort=true)
 struct Particle
 {
     float x[3], u[3];
-
-/* moved static variables to globals.h for use with AMPI
-    static bool initialized;
-    static MPI_Datatype mytype;
-
-    static MPI_Datatype datatype()
-	{
-	    if (!initialized)
-	    {
-		MPI_CHECK( MPI_Type_contiguous(6, MPI_FLOAT, &mytype));
-
-		MPI_CHECK(MPI_Type_commit(&mytype));
-
-		initialized = true;
-	    }
-
-	    return mytype;
-	}
-*/
 };
 
 struct Acceleration
 {
     float a[3];
-
-/* moved static variables to globals.h for use with AMPI
-    static bool initialized;
-    static MPI_Datatype mytype;
-
-    static MPI_Datatype datatype()
-	{
-	    if (!initialized)
-	    {
-		MPI_CHECK( MPI_Type_contiguous(3, MPI_FLOAT, &mytype));
-
-		MPI_CHECK(MPI_Type_commit(&mytype));
-
-		initialized = true;
-	    }
-
-	    return mytype;
-	}
-*/
 };
 
 struct ParticlesWrap

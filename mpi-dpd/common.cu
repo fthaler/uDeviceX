@@ -21,16 +21,6 @@
 bool NvtxTracer::currently_profiling = false;
 #endif
 
-/* moved static class variables to globals.h for AMPI
-bool Particle::initialized = false;
-
-MPI_Datatype Particle::mytype;
-
-bool Acceleration::initialized = false;
-
-MPI_Datatype Acceleration::mytype;
-*/
-
 void CellListsBase::build(Particle * const p, const int n, cudaStream_t stream, int * const order, const Particle * const src)
 {
     NVTX_RANGE("Cells-build", NVTX_C1)
