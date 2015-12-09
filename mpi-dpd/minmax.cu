@@ -224,12 +224,7 @@ void minmax(const Particle * const rbc, int size, int n, float3 *minrbc, float3 
 	minmaxob<<<n, size32, 0, stream>>>(rbc, minrbc, maxrbc, size);
     else
     {
-	static int nctc = -1;
-
-        static sblockds_t *ptoblockds = NULL;
-	
-        if( n > nctc) 
-	{
+        sblockds_t *ptoblockds;
 	    sblockds_t * h_ptoblockds = new sblockds_t[n];
 	    
 	    for(int i=0; i < n; i++)  
@@ -244,18 +239,18 @@ void minmax(const Particle * const rbc, int size, int n, float3 *minrbc, float3 
 		h_ptoblockds[i].maxval.z=MINV;
 	    }
 
-	    if (ptoblockds != NULL) 
-		CUDA_CHECK(cudaFree(ptoblockds));
+        CUDA_CHECK(cudaMalloc((void **)&ptoblockds,sizeof(sblockds_t) * n));
 
-           CUDA_CHECK(cudaMalloc((void **)&ptoblockds,sizeof(sblockds_t) * n));
+        CUDA_CHECK(cudaMemcpy(ptoblockds, h_ptoblockds, sizeof(sblockds_t) * n, cudaMemcpyHostToDevice));
 
-           CUDA_CHECK(cudaMemcpy(ptoblockds, h_ptoblockds, sizeof(sblockds_t) * n, cudaMemcpyHostToDevice));
-
-           delete [] h_ptoblockds;
-        }
+        delete [] h_ptoblockds;
 
         int nblocks= n * ((size + MAXTHREADS - 1) / MAXTHREADS);
 
         minmaxmba<<<nblocks, MAXTHREADS, 0, stream>>>(rbc, minrbc, maxrbc, size, ptoblockds);
+
+        AMPI_YIELD(MPI_COMM_WORLD);
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+        CUDA_CHECK(cudaFree(ptoblockds));
     }
 }
