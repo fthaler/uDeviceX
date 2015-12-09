@@ -531,14 +531,14 @@ void SolventExchange::post(const Particle * const p, const int n, cudaStream_t s
 	{
 	    const int nrequired = required_send_bag_size_host[i];
 
-	    //sendhalos[i].dbuf.size = nrequired;
-        sendhalos[i].dbuf.resize(nrequired);
+	    sendhalos[i].dbuf.size = nrequired;
 
 	    //sendhalos[i].hbuf.size = nrequired;
 	    sendhalos[i].hbuf.resize(nrequired);
 	    assert(nrequired <= sendhalos[i].dbuf.capacity && nrequired <= sendhalos[i].hbuf.capacity);
 
 	    sendhalos[i].scattered_entries.size = nrequired;
+        assert(nrequired <= sendhalos[i].scattered_entries.capacity);
 	}
     }
 
