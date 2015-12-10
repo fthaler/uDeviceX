@@ -537,15 +537,13 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
         memset(&resDesc, 0, sizeof(resDesc));
         resDesc.resType = cudaResourceTypeLinear;
         resDesc.res.linear.devPtr = (void*) xyzo_half;
-        //resDesc.res.linear.desc = cudaCreateChannelDescHalf4();
-        resDesc.res.linear.desc = cudaCreateChannelDesc<ushort4>();
+        resDesc.res.linear.desc = cudaCreateChannelDescHalf4();
         resDesc.res.linear.sizeInBytes = sizeof(ushort4) * np;
         cudaTextureDesc texDesc;
         memset(&texDesc, 0, sizeof(texDesc));
         texDesc.filterMode = cudaFilterModePoint;
         texDesc.mipmapFilterMode = cudaFilterModePoint;
         texDesc.normalizedCoords = 0;
-        texDesc.readMode = cudaReadModeNormalizedFloat;
          
         CUDA_CHECK(cudaCreateTextureObject(&texParticlesH4,
                                            &resDesc, &texDesc, NULL));
