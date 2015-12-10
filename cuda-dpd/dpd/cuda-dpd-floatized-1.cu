@@ -563,7 +563,7 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
         memset(&resDesc, 0, sizeof(resDesc));
         resDesc.resType = cudaResourceTypeLinear;
         resDesc.res.linear.devPtr = (void*) start_and_count;
-        resDesc.res.linear.desc = cudaCreateChannelDescHalf4();
+        resDesc.res.linear.desc = cudaCreateChannelDesc<uint2>();
         resDesc.res.linear.sizeInBytes = sizeof(uint2) * ncells;
         cudaTextureDesc texDesc;
         memset(&texDesc, 0, sizeof(texDesc));
