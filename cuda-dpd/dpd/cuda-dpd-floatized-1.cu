@@ -223,6 +223,7 @@ void _dpd_forces_symm_merged(cudaTextureObject_t texParticlesF4, cudaTextureObje
         //* was: start_n_scan[wid][tid].x = (valid_cid) ? sc.x : 0;
         //* was: myscan = mycount = (valid_cid) ? sc.y : 0;
         //* was: }
+        const uint2 texval = tex1Dfetch<uint2>(texStartAndCount, cid);
         uint mystart = 0, mycount = 0, myscan;
         asm( "{  .reg .pred vc;"
              "   .reg .u32  foo, bar;"
@@ -230,11 +231,12 @@ void _dpd_forces_symm_merged(cudaTextureObject_t texParticlesF4, cudaTextureObje
              "    setp.ge.and.f32 vc, %5, 0.0, vc;"
              "    setp.lt.and.s32 vc, %4, %6, vc;"
              "    selp.s32 %0, 1, 0, vc;"
-             "@vc tex.a1d.v4.s32.s32 {%0, %1, foo, bar}, [%7, %4];"
+             "@vc mov.b32 %0, %7;"
+             "@vc mov.b32 %1, %8;"
              "}" :
              "+r"( mystart ), "+r"( mycount )  :
              "f"( u2f( tid ) ), "f"( u2f( 14u ) ), "r"( cid ), "f"( i2f( cid ) ),
-             "r"( info.nxyz ), "l"(texStartAndCount) );
+             "r"( info.nxyz ), "r"(texval.x), "r"(texval.y));
         myscan  = mycount;
         asm volatile( "st.volatile.shared.u32 [%0], %1;" ::
                       "r"( xmad( tid, 8.f, pshare ) ),
