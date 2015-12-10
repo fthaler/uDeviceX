@@ -638,10 +638,10 @@ void RedistributeParticles::pack(const Particle * const particles, const int npa
 			       sizeof(float) * 6 * nparticles));*/
     }
 
-    /*if (texAllParticlesFloat2) {
+    if (texAllParticlesFloat2) {
         CUDA_CHECK(cudaDestroyTextureObject(texAllParticlesFloat2));
         texAllParticlesFloat2 = 0;
-    }*/
+    }
     if (nparticles) {
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
