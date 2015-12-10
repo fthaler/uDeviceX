@@ -39,6 +39,7 @@ class ComputeContact : public SoluteExchange::Visitor
     int* packstarts_padded, *packcount;
     Particle** packstates;
     Acceleration** packresults;
+    uint* scan_tmp;
 
 public:
 

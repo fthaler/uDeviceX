@@ -427,7 +427,8 @@ compressed_cellcounts(this, XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN)
 remote_particles(this), scattered_indices(this),
 subindices(this, 1.5 * numberdensity * XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN),
 subindices_remote(this, 1.5 * numberdensity * (XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN -
-					 (XSIZE_SUBDOMAIN - 2) * (YSIZE_SUBDOMAIN - 2) * (ZSIZE_SUBDOMAIN - 2)))
+					 (XSIZE_SUBDOMAIN - 2) * (YSIZE_SUBDOMAIN - 2) * (ZSIZE_SUBDOMAIN - 2))),
+scan_tmp(NULL)
 {
     safety_factor = getenv("RDP_COMM_FACTOR") ? atof(getenv("RDP_COMM_FACTOR")) : 1.2;
 
@@ -911,7 +912,7 @@ void RedistributeParticles::recv_unpack(Particle * const particles, float4 * con
 	(compressed_cellcounts.size, (int4 *)cellcounts, (uchar4 *)compressed_cellcounts.data);
     AMPI_YIELD(cartcomm);
 
-    scan(compressed_cellcounts.data, compressed_cellcounts.size, mystream, (uint *)cellstarts);
+    scan(compressed_cellcounts.data, compressed_cellcounts.size, mystream, (uint *)cellstarts, scan_tmp);
 
 #ifndef NDEBUG
     CUDA_CHECK(cudaMemset(scattered_indices.data, 0xff, sizeof(int) * scattered_indices.size));
@@ -997,7 +998,8 @@ void RedistributeParticles::adjust_message_sizes(ExpectedMessageSizes sizes)
 }
 
 RedistributeParticles::~RedistributeParticles()
-{
+{ 
+    pre_migrate();
     destroy_migratable_event(evpacking);
     destroy_migratable_event(evsizes);
 
@@ -1022,7 +1024,15 @@ RedistributeParticles::~RedistributeParticles()
     free_migratable(failed);
 }
 
-void RedistributeParticles::update_device_pointers()
+void RedistributeParticles::pre_migrate()
+{
+    if (scan_tmp) {
+        CUDA_CHECK(cudaFree(scan_tmp));
+        scan_tmp = NULL;
+    }
+}
+
+void RedistributeParticles::post_migrate()
 {
     for (int i = 0; i < 27; ++i)
     {

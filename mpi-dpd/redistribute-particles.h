@@ -62,7 +62,8 @@ public:
 
     bool migratable() { return firstcall && !lastcall; }
 
-    void update_device_pointers();
+    void pre_migrate();
+    void post_migrate();
 
 private:
     // moved globals from redistribute-particles.cu
@@ -74,6 +75,7 @@ private:
     int* pack_count, *pack_start_padded;
     int* unpack_start, *unpack_start_padded;
     bool* failed;
+    uint* scan_tmp;
 
     MPI_Comm cartcomm;
 

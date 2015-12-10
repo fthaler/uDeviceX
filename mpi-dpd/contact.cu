@@ -42,7 +42,7 @@ namespace KernelsContact
 }
 
 ComputeContact::ComputeContact(MPI_Comm comm):
-cellsstart(KernelsContact::NCELLS + 16), cellscount(KernelsContact::NCELLS + 16), compressed_cellscount(KernelsContact::NCELLS + 16), texCellsStart(0), texCellEntries(0)
+cellsstart(KernelsContact::NCELLS + 16), cellscount(KernelsContact::NCELLS + 16), compressed_cellscount(KernelsContact::NCELLS + 16), texCellsStart(0), texCellEntries(0), scan_tmp(NULL)
 {
     CUDA_CHECK(cudaMalloc(&cnsolutes, sizeof(int) * maxsolutes));
     CUDA_CHECK(cudaMalloc(&csolutes, sizeof(float2*) * maxsolutes));
@@ -73,6 +73,8 @@ ComputeContact::~ComputeContact()
     CUDA_CHECK(cudaFree(packcount));
     CUDA_CHECK(cudaFree(packstates));
     CUDA_CHECK(cudaFree(packresults));
+    if (scan_tmp)
+        CUDA_CHECK(cudaFree(scan_tmp));
 }
 
 namespace KernelsContact
@@ -238,7 +240,7 @@ void ComputeContact::build_cells(std::vector<ParticlesWrap> wsolutes, cudaStream
     compress_counts<<< (compressed_cellscount.size + 127) / 128, 128, 0, stream >>>
 	(compressed_cellscount.size, (int4 *)cellscount.data, (uchar4 *)compressed_cellscount.data);
 
-    scan(compressed_cellscount.data, compressed_cellscount.size, stream, (uint *)cellsstart.data);
+    scan(compressed_cellscount.data, compressed_cellscount.size, stream, (uint *)cellsstart.data, scan_tmp);
 
     ctr = 0;
     for(int i = 0; i < wsolutes.size(); ++i)

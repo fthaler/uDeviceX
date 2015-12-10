@@ -202,11 +202,12 @@ __global__ void gexscan(uint4 *vin, unsigned int *offs, uint4 *vout, int n) {
 	return;
 }
 
-void scan(const unsigned char * const input, const int size, cudaStream_t stream, uint * const output)
+void scan(const unsigned char * const input, const int size, cudaStream_t stream, uint * const output,
+        uint* &tmp)
 {
     enum { THREADS = 128 } ;
     
-    static uint * tmp = NULL;
+    //uint * tmp = NULL;
 
     if (tmp == NULL)
     	cudaMalloc(&tmp, sizeof(uint) * (64 * 64 * 64 / THREADS));

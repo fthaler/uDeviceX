@@ -1047,6 +1047,7 @@ void Simulation::_lockstep()
 void Simulation::_pre_migrate()
 {
     CUDA_CHECK(cudaDeviceSynchronize());
+    redistribute.pre_migrate();
 
     if (dpd)
         delete dpd;
@@ -1084,7 +1085,7 @@ void Simulation::_post_migrate()
     CUDA_CHECK(cudaStreamCreate(&uploadstream));
     CUDA_CHECK(cudaStreamCreate(&downloadstream));
 
-    redistribute.update_device_pointers();
+    redistribute.post_migrate();
     if (wall.is_active())
         wall.create_sdf_texture();
 }
