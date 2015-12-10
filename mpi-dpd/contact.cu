@@ -73,8 +73,10 @@ ComputeContact::~ComputeContact()
     CUDA_CHECK(cudaFree(packcount));
     CUDA_CHECK(cudaFree(packstates));
     CUDA_CHECK(cudaFree(packresults));
-    if (scan_tmp)
+    if (scan_tmp) {
         CUDA_CHECK(cudaFree(scan_tmp));
+        scan_tmp = NULL;
+    }
 }
 
 namespace KernelsContact
