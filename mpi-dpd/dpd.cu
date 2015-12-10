@@ -225,7 +225,7 @@ namespace BipsBatch
     cudaEvent_t evhalodone;
 
     void interactions(unsigned* start, BatchInfo* batchinfos, const float aij, const float gamma, const float sigma, const float invsqrtdt,
-		      const BatchInfo infos[20], cudaStream_t computestream, cudaStream_t uploadstream, float * const acc, const int n)
+		      const BatchInfo infos[20], cudaStream_t computestream, cudaStream_t uploadstream, float * const acc, const int n, unsigned hstart_padded[27])
     {
 	if (firstcall)
 	{
@@ -237,7 +237,7 @@ namespace BipsBatch
     CUDA_CHECK(cudaMemcpyAsync(batchinfos, infos, sizeof(BatchInfo) * 26, cudaMemcpyHostToDevice, uploadstream));
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(batchinfos, infos, sizeof(BatchInfo) * 26, 0, cudaMemcpyHostToDevice, uploadstream));
 
-	unsigned int hstart_padded[27];
+	//unsigned int hstart_padded[27];
 
 	hstart_padded[0] = 0;
 	for(int i = 0; i < 26; ++i)
@@ -247,7 +247,6 @@ namespace BipsBatch
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(start, hstart_padded, sizeof(hstart_padded), 0, cudaMemcpyHostToDevice, uploadstream));
 
     AMPI_YIELD(MPI_COMM_WORLD);
-    CUDA_CHECK(cudaStreamSynchronize(uploadstream));
 
 	const int nthreads = 2 * hstart_padded[26];
 
@@ -265,7 +264,7 @@ namespace BipsBatch
 
 using namespace std;
 
-ComputeDPD::ComputeDPD(Globals* globals, MPI_Comm cartcomm): SolventExchange(globals, cartcomm, 0), local_trunk(0, 0, 0, 0)
+ComputeDPD::ComputeDPD(Globals* globals, MPI_Comm cartcomm): SolventExchange(globals, cartcomm, 0), local_trunk(0, 0, 0, 0), texParticlesF4(0), texParticlesH4(0), texStartAndCount(0), start_and_count(NULL), last_nc(0)
 {
     CUDA_CHECK(cudaMalloc(&start, sizeof(unsigned) * 27));
     CUDA_CHECK(cudaMalloc(&batchinfos, sizeof(BipsBatch::BatchInfo) * 26));
@@ -332,11 +331,14 @@ void ComputeDPD::local_interactions(const Particle * const xyzuvw, const float4 
 {
     NVTX_RANGE("DPD/local", NVTX_C5);
 
-    if (n > 0)
+    if (n > 0) {
 	forces_dpd_cuda_nohost((float*)xyzuvw, xyzouvwo, xyzo_half, (float *)a, n,
 			       cellsstart, cellscount,
 			       1, XSIZE_SUBDOMAIN, YSIZE_SUBDOMAIN, ZSIZE_SUBDOMAIN, aij, gammadpd,
-			       sigma, 1. / sqrt(dt), local_trunk.get_float(), stream);
+			       sigma, 1. / sqrt(dt), local_trunk.get_float(), stream,
+                   texParticlesF4, texParticlesH4, texStartAndCount, start_and_count, last_nc);
+    AMPI_YIELD(cartcomm);
+    }
 }
 
 void ComputeDPD::remote_interactions(const Particle * const p, const int n, Acceleration * const a, cudaStream_t stream, cudaStream_t uploadstream)
@@ -369,7 +371,7 @@ void ComputeDPD::remote_interactions(const Particle * const p, const int n, Acce
 	infos[i] = entry;
     }
 
-    BipsBatch::interactions(start, batchinfos, aij, gammadpd, sigma, 1. / sqrt(dt), infos, stream, uploadstream, (float *)a, n);
+    BipsBatch::interactions(start, batchinfos, aij, gammadpd, sigma, 1. / sqrt(dt), infos, stream, uploadstream, (float *)a, n, hstart_padded);
 
     AMPI_YIELD(cartcomm);
     CUDA_CHECK(cudaStreamSynchronize(uploadstream));

@@ -38,6 +38,10 @@ class ComputeDPD : public SolventExchange
 
     bool interrank_masks[26];
     
+    cudaTextureObject_t texParticlesF4, texParticlesH4, texStartAndCount;
+    uint2 *start_and_count;
+    int last_nc;
+    unsigned hstart_padded[27];
 public:
     
     ComputeDPD(Globals* globals, MPI_Comm cartcomm);

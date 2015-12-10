@@ -37,7 +37,12 @@ void forces_dpd_cuda_nohost(const float * const xyzuvw, const float4 * const xyz
 			    const float sigma,
 			    const float invsqrtdt,
 			    const float seed1,
-			    cudaStream_t stream);		  
+			    cudaStream_t stream,
+                cudaTextureObject_t &texParticlesF4,
+                cudaTextureObject_t &texParticlesH4,
+                cudaTextureObject_t &texStartAndCount,
+                uint2* &start_and_count,
+                int &last_nc);
 
 void forces_dpd_cuda(const float * const xp, const float * const yp, const float * const zp,
 		     const float * const xv, const float * const yv, const float * const zv,

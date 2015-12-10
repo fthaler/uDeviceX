@@ -372,7 +372,6 @@ void _dpd_forces_symm_merged(cudaTextureObject_t texParticlesF4, cudaTextureObje
     }
 }
 
-bool fdpd_init = false;
 static bool is_mps_enabled = false;
 #include "../hacks.h"
 #ifdef _TIME_PROFILE_
@@ -445,7 +444,12 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
                              const float gamma,
                              const float sigma,
                              const float invsqrtdt,
-                             const float seed, cudaStream_t stream )
+                             const float seed, cudaStream_t stream,
+                             cudaTextureObject_t &texParticlesF4,
+                             cudaTextureObject_t &texParticlesH4,
+                             cudaTextureObject_t &texStartAndCount,
+                             uint2* &start_and_count,
+                             int &last_nc)
 {
 //  #ifdef ONESTEP
 //  cudaDeviceSetLimit( cudaLimitPrintfFifoSize, 32 * 1024 * 1024 );
@@ -461,8 +465,8 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
     int nz = ( int )ceil( ZL / rc );
     const int ncells = nx * ny * nz;
 
-    if( !fdpd_init ) {
-        /*texStartAndCount.channelDesc = cudaCreateChannelDesc<uint2>();
+    /*if( !fdpd_init ) {
+        texStartAndCount.channelDesc = cudaCreateChannelDesc<uint2>();
         texStartAndCount.filterMode  = cudaFilterModePoint;
         texStartAndCount.mipmapFilterMode = cudaFilterModePoint;
         texStartAndCount.normalized = 0;
@@ -485,7 +489,7 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
         CUDA_CHECK( cudaEventCreate( &evstop ) );
 #endif
 
-	{
+	/*{
 	    is_mps_enabled = false;
 
 	    const char * mps_variables[] = {
@@ -500,23 +504,24 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
 	}
 
         fdpd_init = true;
-    }
+    }*/
 
     InfoDPD c;
 
     //size_t textureoffset;
    
-    uint2 *start_and_count;
-    /*int last_nc;
+    /*uint2 *start_and_count;
+    int last_nc;*/
     if( !start_and_count || last_nc < ncells ) {
         if( start_and_count ) {
             cudaFree( start_and_count );
-        }*/
+        }
         CUDA_CHECK(cudaMalloc( &start_and_count, sizeof( uint2 )*ncells ));
-        /*last_nc = ncells;
-    }*/
+        last_nc = ncells;
+    }
 
-    cudaTextureObject_t texParticlesF4;
+    if (texParticlesF4)
+        CUDA_CHECK(cudaDestroyTextureObject(texParticlesF4));
     {
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
@@ -533,7 +538,9 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
         CUDA_CHECK(cudaCreateTextureObject(&texParticlesF4,
                                            &resDesc, &texDesc, NULL));
     }
-    cudaTextureObject_t texParticlesH4;
+
+    if (texParticlesH4)
+        CUDA_CHECK(cudaDestroyTextureObject(texParticlesH4));
     {
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
@@ -559,7 +566,8 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
     /*CUDA_CHECK( cudaBindTexture( &textureoffset, &texStartAndCount, start_and_count, &texStartAndCount.channelDesc, sizeof( uint2 ) * ncells ) );
     assert( textureoffset == 0 );*/
 
-    cudaTextureObject_t texStartAndCount;
+    if (texStartAndCount)
+        CUDA_CHECK(cudaDestroyTextureObject(texStartAndCount));
     {
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
@@ -635,15 +643,6 @@ void forces_dpd_cuda_nohost( const float * const xyzuvw, const float4 * const xy
         printf( "elapsed time for DPD-BULK kernel: %.2f ms\n", tms );
     }
 #endif
-#ifdef AMPI
-    AMPI_Yield(MPI_COMM_WORLD);
-#endif
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-    CUDA_CHECK(cudaFree(start_and_count));
-
-    CUDA_CHECK(cudaDestroyTextureObject(texParticlesF4));
-    CUDA_CHECK(cudaDestroyTextureObject(texParticlesH4));
-    CUDA_CHECK(cudaDestroyTextureObject(texStartAndCount));
 
     CUDA_CHECK( cudaPeekAtLastError() );
 }
