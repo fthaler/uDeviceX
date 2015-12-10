@@ -421,7 +421,7 @@ namespace RedistributeParticlesKernels
 }
 
 RedistributeParticles::RedistributeParticles(MPI_Comm _cartcomm):
-texAllParticlesFloat2(0),
+texAllParticles(0), texAllParticlesFloat2(0),
 failure(this, 1), packsizes(this, 27), nactiveneighbors(26), firstcall(true), lastcall(false),
 compressed_cellcounts(this, XSIZE_SUBDOMAIN * YSIZE_SUBDOMAIN * ZSIZE_SUBDOMAIN),
 remote_particles(this), scattered_indices(this),
@@ -614,7 +614,10 @@ void RedistributeParticles::pack(const Particle * const particles, const int npa
 	_post_recv();
 
     //size_t textureoffset;
-    cudaTextureObject_t texAllParticles = 0;
+    if (texAllParticles) {
+        CUDA_CHECK(cudaDestroyTextureObject(texAllParticles));
+        texAllParticles = 0;
+    }
     if (nparticles) {
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
@@ -635,8 +638,10 @@ void RedistributeParticles::pack(const Particle * const particles, const int npa
 			       sizeof(float) * 6 * nparticles));*/
     }
 
-    //cudaTextureObject_t texAllParticlesFloat2 = 0;
-    assert(texAllParticlesFloat2 == 0);
+    /*if (texAllParticlesFloat2) {
+        CUDA_CHECK(cudaDestroyTextureObject(texAllParticlesFloat2));
+        texAllParticlesFloat2 = 0;
+    }*/
     if (nparticles) {
         cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(resDesc));
@@ -713,11 +718,6 @@ pack_attempt:
 	    secondchance = true;
 
 	goto pack_attempt;
-    }
-
-    if (nparticles) {
-        CUDA_CHECK(cudaStreamSynchronize(mystream));
-        CUDA_CHECK(cudaDestroyTextureObject(texAllParticles));
     }
 
     CUDA_CHECK(cudaPeekAtLastError());
@@ -826,7 +826,7 @@ int RedistributeParticles::recv_count(cudaStream_t mystream, float& host_idle_ti
     host_idle_time += _waitall(recvcountreq, nactiveneighbors);
 
     {
-	int usize[27], ustart[28], ustart_padded[28];
+	//int usize[27], ustart[28], ustart_padded[28];
 
 	usize[0] = 0;
 	for(int i = 1; i < 27; ++i)
@@ -853,8 +853,7 @@ int RedistributeParticles::recv_count(cudaStream_t mystream, float& host_idle_ti
 	/*CUDA_CHECK(cudaMemcpyToSymbolAsync(RedistributeParticlesKernels::unpack_start_padded, ustart_padded,
 					   sizeof(int) * 28, 0, cudaMemcpyHostToDevice, mystream));*/
 
-    AMPI_YIELD(cartcomm);
-    CUDA_CHECK(cudaStreamSynchronize(mystream));
+    //AMPI_YIELD(cartcomm);
     }
 
     {
@@ -934,11 +933,7 @@ void RedistributeParticles::recv_unpack(Particle * const particles, float4 * con
 	 ntexparticles, nparticles, (float2 *)particles, xyzouvwo, xyzo_half);
     AMPI_YIELD(cartcomm);
 
-    if (nparticles) {
-        CUDA_CHECK(cudaStreamSynchronize(mystream));
-        CUDA_CHECK(cudaDestroyTextureObject(texAllParticlesFloat2));
-        texAllParticlesFloat2 = 0;
-    }
+    //CUDA_CHECK(cudaStreamSynchronize(mystream));
 
     CUDA_CHECK(cudaPeekAtLastError());
 
@@ -1026,6 +1021,14 @@ RedistributeParticles::~RedistributeParticles()
 
 void RedistributeParticles::pre_migrate()
 {
+    if (texAllParticles) {
+        CUDA_CHECK(cudaDestroyTextureObject(texAllParticles));
+        texAllParticles = 0;
+    }
+    if (texAllParticlesFloat2) {
+        CUDA_CHECK(cudaDestroyTextureObject(texAllParticlesFloat2));
+        texAllParticlesFloat2 = 0;
+    }
     if (scan_tmp) {
         CUDA_CHECK(cudaFree(scan_tmp));
         scan_tmp = NULL;
