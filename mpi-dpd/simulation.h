@@ -75,6 +75,7 @@ class Simulation : public GlobalsInjector
     const size_t nsteps;
     float driving_acceleration;
     float host_idle_time;
+    float load;
     int nranks, rank;  
 	    
     std::vector<Particle> _ic();

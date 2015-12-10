@@ -184,11 +184,16 @@ void Simulation::_report(const bool verbose, const int idtimestep)
 
 #ifdef AMPI
     // use static variables for intra-PE communication
+    const float host_load_time = load * 1e3 / globals->steps_per_report;
     static volatile float pe_busy_time, vp_busy_time_min, vp_busy_time_max;
+    static volatile float pe_load_time, vp_load_time_min, vp_load_time_max;
     static volatile int vps_per_pe;
     pe_busy_time = 0;
     vp_busy_time_min = host_busy_time;
     vp_busy_time_max = host_busy_time;
+    pe_load_time = 0;
+    vp_load_time_min = host_load_time;
+    vp_load_time_max = host_load_time;
     vps_per_pe = 0;
     MPI_CHECK(MPI_Barrier(activecomm));
     // get data of all PEs
@@ -197,14 +202,22 @@ void Simulation::_report(const bool verbose, const int idtimestep)
         vp_busy_time_max = host_busy_time;
     if (host_busy_time < vp_busy_time_min)
         vp_busy_time_min = host_busy_time;
+    pe_load_time += host_load_time;
+    if (host_load_time > vp_load_time_max)
+        vp_load_time_max = host_load_time;
+    if (host_load_time < vp_load_time_min)
+        vp_load_time_min = host_load_time;
     const int vpid = vps_per_pe++;
     MPI_CHECK(MPI_Barrier(activecomm));
 
     if (idtimestep > 0) {
         // report info per PE
         if (vpid == 0) {
-            printf("\x1b[95mPE %d workload (%d VPs) min/avg/max/total: %.2f/%.2f/%.2f ms\x1b[0m\n",
-                   MPI_My_pe(), vps_per_pe, vp_busy_time_min, pe_busy_time / vps_per_pe, vp_busy_time_max, pe_busy_time);
+            printf("\x1b[95mPE %d (%2d VPs) total busy time min/avg/max/total: %6.2f/%6.2f/%6.2f/%6.2f ms\n"
+                   "                measured load min/avg/max/total: %6.2f/%6.2f/%6.2f/%6.2f ms\x1b[0m\n",
+                   MPI_My_pe(), vps_per_pe,
+                   vp_busy_time_min, pe_busy_time / vps_per_pe, vp_busy_time_max, pe_busy_time,
+                   vp_load_time_min, pe_load_time / vps_per_pe, vp_load_time_max, pe_load_time);
         }
 
         // get and report PE-imbalance
@@ -215,11 +228,6 @@ void Simulation::_report(const bool verbose, const int idtimestep)
         const double pe_imbalance = 100 * (pe_busy_time_max / pe_busy_time_sum * MPI_Num_pes() - 1);
         if (verbose)
             printf("\x1b[95moverall PE imbalance: %.f%%\n", pe_imbalance);
-
-        // compute load as a mix of average PE load and VP load
-        const float vp_mix = 0.1f;
-        const float load = (pe_busy_time / vps_per_pe) * (1.0f - vp_mix) + host_busy_time * vp_mix;
-        //MPI_Set_load(load);
     }
 #endif
 
@@ -775,7 +783,7 @@ Simulation::Simulation(Globals* globals, MPI_Comm cartcomm, MPI_Comm activecomm,
     /*dpd(globals, cartcomm), fsi(cartcomm), contact(cartcomm), solutex(cartcomm),*/
     dpd(NULL), fsi(NULL), contact(NULL), solutex(NULL),
     check_termination(check_termination),
-    driving_acceleration(0), host_idle_time(0), nsteps((int)(globals->tend / dt)),
+    driving_acceleration(0), host_idle_time(0), load(0), nsteps((int)(globals->tend / dt)),
 #ifndef AMPI
     datadump_pending(false),
 #endif
@@ -1159,6 +1167,7 @@ void Simulation::run()
 
 	_redistribute();
 
+    double load_start;
 #if 1
     lockstep_check:
 
@@ -1177,16 +1186,18 @@ void Simulation::run()
 	    !(((it + 1) + 1) % globals->steps_per_report == 0) &&
 	    !((it + 1) + 1 == nsteps);
 #ifdef AMPI
-    const int synchronous_steps = globals->steps_per_report / 10;
+    const int synchronous_percent = 10;
+    const int synchronous_steps = globals->steps_per_report / (100 / synchronous_percent);
     const bool synchronous = it % globals->steps_per_report < synchronous_steps;
 
     if (synchronous && mainstream) {
         CUDA_CHECK(cudaStreamDestroy(mainstream));
         mainstream = 0;
-        MPI_Start_measure();
+        load_start = MPI_Wtime();
     } else if (!synchronous && !mainstream) {
         CUDA_CHECK(cudaStreamCreate(&mainstream));
-        MPI_Stop_measure();
+        load = (MPI_Wtime() - load_start) * (100 / synchronous_percent);
+        MPI_Set_load(load);
     }
 #endif
 
