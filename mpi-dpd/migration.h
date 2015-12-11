@@ -97,7 +97,9 @@ private:
         void *hostptr;
     };
 
+#ifdef AMPI
     static void pup(pup_er p, void *d);
+#endif
 
     Buffer& get_inactive_buffer()
     {
@@ -253,6 +255,7 @@ void Migratable<B, E, A>::destroy_migratable_event(cudaEvent_t event)
     assert(false);
 }
 
+#ifdef AMPI
 template <int B, int E, int A>
 void Migratable<B, E, A>::pup(pup_er p, void *d)
 {
@@ -394,6 +397,7 @@ void Migratable<B, E, A>::pup(pup_er p, void *d)
         }
     }
 }
+#endif
 
 template <int B, int E, int A>
 void Migratable<B, E, A>::allocate_buffer(void** ptr, int size, typename Buffer::Status status)
