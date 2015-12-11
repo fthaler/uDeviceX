@@ -31,6 +31,7 @@ protected:
     int* coffsets;
     int* ccounts, *cbases, *cpaddedstarts;
     float** recvbags;
+    float* hrecvbags[26];
 
     MPI_Comm cartcomm;
 
