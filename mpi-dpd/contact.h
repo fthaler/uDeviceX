@@ -40,6 +40,9 @@ class ComputeContact : public SoluteExchange::Visitor
     Particle** packstates;
     Acceleration** packresults;
     uint* scan_tmp;
+    int ns[32];
+    float2* ps[32];
+    float* as[32];
 
 public:
 
