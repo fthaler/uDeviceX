@@ -18,14 +18,6 @@
 
 namespace PackingHalo
 {
-    struct CellPackSOA { int * start, * count, * scan, size; bool enabled; };
-    struct SendBagInfo
-    {
-	const int * start_src, * count_src, * start_dst;
-	int bagsize, * scattered_entries;
-	Particle * dbag, * hbag;
-    };
-
     __global__ void count_all(const int* cellpackstarts, const CellPackSOA* cellpacks, const int * const cellsstart, const int * const cellscount, const int ntotalcells)
     {
 	assert(blockDim.x * gridDim.x >= ntotalcells);
@@ -369,24 +361,19 @@ void SolventExchange::_pack_all(const Particle * const p, const int n, const boo
 {
     if (update_baginfos)
     {
-	PackingHalo::SendBagInfo baginfos[26];
-
 	for(int i = 0; i < 26; ++i)
 	{
-	    baginfos[i].start_src = sendhalos[i].tmpstart.data;
-	    baginfos[i].count_src = sendhalos[i].tmpcount.data;
-	    baginfos[i].start_dst = sendhalos[i].dcellstarts.data;
-	    baginfos[i].bagsize = sendhalos[i].dbuf.capacity;
-	    baginfos[i].scattered_entries = sendhalos[i].scattered_entries.data;
-	    baginfos[i].dbag = sendhalos[i].dbuf.data;
-	    baginfos[i].hbag = sendhalos[i].hbuf.data;
+	    hbaginfos[i].start_src = sendhalos[i].tmpstart.data;
+	    hbaginfos[i].count_src = sendhalos[i].tmpcount.data;
+	    hbaginfos[i].start_dst = sendhalos[i].dcellstarts.data;
+	    hbaginfos[i].bagsize = sendhalos[i].dbuf.capacity;
+	    hbaginfos[i].scattered_entries = sendhalos[i].scattered_entries.data;
+	    hbaginfos[i].dbag = sendhalos[i].dbuf.data;
+	    hbaginfos[i].hbag = sendhalos[i].hbuf.data;
 	}
 
-    CUDA_CHECK(cudaMemcpyAsync(this->baginfos, baginfos, sizeof(baginfos), cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(baginfos, hbaginfos, sizeof(hbaginfos), cudaMemcpyHostToDevice, stream));
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(PackingHalo::baginfos, baginfos, sizeof(baginfos), 0, cudaMemcpyHostToDevice, stream)); // peh: added stream
-
-    AMPI_YIELD(cartcomm);
-    CUDA_CHECK(cudaStreamSynchronize(stream));
     }
 
     if (ncells) {

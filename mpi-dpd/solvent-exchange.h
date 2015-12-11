@@ -17,7 +17,15 @@
 #include "common.h"
 #include "globals.h"
 
-namespace PackingHalo { struct CellPackSOA; struct SendBagInfo; }
+namespace PackingHalo {
+    struct CellPackSOA { int * start, * count, * scan, size; bool enabled; };
+    struct SendBagInfo
+    {
+	const int * start_src, * count_src, * start_dst;
+	int bagsize, * scattered_entries;
+	Particle * dbag, * hbag;
+    };
+}
 
 class SolventExchange : public GlobalsInjector
 {
@@ -27,6 +35,7 @@ class SolventExchange : public GlobalsInjector
     PackingHalo::CellPackSOA* cellpacks;
     int** srccells, **dstcells;
     PackingHalo::SendBagInfo* baginfos;
+    PackingHalo::SendBagInfo hbaginfos[26];
 
     MPI_Request sendreq[26 * 2], recvreq[26], sendcellsreq[26], recvcellsreq[26], sendcountreq[26], recvcountreq[26];
     
