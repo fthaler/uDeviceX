@@ -243,7 +243,7 @@ namespace BipsBatch
 	for(int i = 0; i < 26; ++i)
 	    hstart_padded[i + 1] = hstart_padded[i] + 16 * (((unsigned int)infos[i].ndst + 15)/ 16) ;
 
-    CUDA_CHECK(cudaMemcpyAsync(start, hstart_padded, sizeof(hstart_padded), cudaMemcpyHostToDevice, uploadstream));
+    CUDA_CHECK(cudaMemcpyAsync(start, hstart_padded, sizeof(unsigned) * 27, cudaMemcpyHostToDevice, uploadstream));
 	//CUDA_CHECK(cudaMemcpyToSymbolAsync(start, hstart_padded, sizeof(hstart_padded), 0, cudaMemcpyHostToDevice, uploadstream));
 
     AMPI_YIELD(MPI_COMM_WORLD);
