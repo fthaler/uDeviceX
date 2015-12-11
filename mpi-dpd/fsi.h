@@ -35,8 +35,12 @@ class ComputeFSI : public SoluteExchange::Visitor
     int* packstarts_padded, *packcount;
     Particle** packstates;
     Acceleration** packresults;
+    int hrecvpackcount[26], hrecvpackstarts_padded[27];
+    const Particle* hrecvpackstates[26];
+    Acceleration* hpackresults[26];
 
     bool firsttime;
+
 
 public:
 

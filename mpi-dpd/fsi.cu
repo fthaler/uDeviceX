@@ -533,58 +533,51 @@ void ComputeFSI::halo(ParticlesWrap halos[26], cudaStream_t stream)
     int nremote_padded = 0;
 
     {
-	int recvpackcount[26], recvpackstarts_padded[27];
-
 	for(int i = 0; i < 26; ++i)
-	    recvpackcount[i] = halos[i].n;
+	    hrecvpackcount[i] = halos[i].n;
 
-    CUDA_CHECK(cudaMemcpyAsync(packcount, recvpackcount, sizeof(recvpackcount),
+    CUDA_CHECK(cudaMemcpyAsync(packcount, hrecvpackcount, sizeof(hrecvpackcount),
                                cudaMemcpyHostToDevice, stream));
 	/*CUDA_CHECK(cudaMemcpyToSymbolAsync(KernelsFSI::packcount, recvpackcount,
 					   sizeof(recvpackcount), 0, cudaMemcpyHostToDevice, stream));*/
 
-	recvpackstarts_padded[0] = 0;
+	hrecvpackstarts_padded[0] = 0;
 	for(int i = 0, s = 0; i < 26; ++i)
-	    recvpackstarts_padded[i + 1] = (s += 32 * ((halos[i].n + 31) / 32));
+	    hrecvpackstarts_padded[i + 1] = (s += 32 * ((halos[i].n + 31) / 32));
 
-	nremote_padded = recvpackstarts_padded[26];
+	nremote_padded = hrecvpackstarts_padded[26];
 
-    CUDA_CHECK(cudaMemcpyAsync(packstarts_padded, recvpackstarts_padded, sizeof(recvpackstarts_padded),
+    CUDA_CHECK(cudaMemcpyAsync(packstarts_padded, hrecvpackstarts_padded, sizeof(hrecvpackstarts_padded),
                                cudaMemcpyHostToDevice, stream));
 	/*CUDA_CHECK(cudaMemcpyToSymbolAsync(KernelsFSI::packstarts_padded, recvpackstarts_padded,
 					   sizeof(recvpackstarts_padded), 0, cudaMemcpyHostToDevice, stream));*/
     }
 
     {
-	const Particle * recvpackstates[26];
-
 	for(int i = 0; i < 26; ++i)
-	    recvpackstates[i] = halos[i].p;
+	    hrecvpackstates[i] = halos[i].p;
 
-    CUDA_CHECK(cudaMemcpyAsync(packstates, recvpackstates, sizeof(recvpackstates),
+    CUDA_CHECK(cudaMemcpyAsync(packstates, hrecvpackstates, sizeof(hrecvpackstates),
                                cudaMemcpyHostToDevice, stream));
 	/*CUDA_CHECK(cudaMemcpyToSymbolAsync(KernelsFSI::packstates, recvpackstates,
 					   sizeof(recvpackstates), 0, cudaMemcpyHostToDevice, stream));*/
     }
 
     {
-	Acceleration * packresults[26];
-
 	for(int i = 0; i < 26; ++i)
-	    packresults[i] = halos[i].a;
+	    hpackresults[i] = halos[i].a;
 
-    CUDA_CHECK(cudaMemcpyAsync(this->packresults, packresults, sizeof(packresults),
+    CUDA_CHECK(cudaMemcpyAsync(packresults, hpackresults, sizeof(hpackresults),
                                cudaMemcpyHostToDevice, stream));
 	/*CUDA_CHECK(cudaMemcpyToSymbolAsync(KernelsFSI::packresults, packresults,
 					   sizeof(packresults), 0, cudaMemcpyHostToDevice, stream));*/
     }
 
-    AMPI_YIELD(cartcomm);
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-
-    if(nremote_padded)
+    if(nremote_padded) {
     	KernelsFSI::interactions_halo<<< (nremote_padded + 127) / 128, 128, 0, stream>>>
 	    (texSolventParticles, texCellsStart, packstarts_padded, packcount, packstates, this->packresults, nremote_padded, wsolvent.n, (float *)wsolvent.a, local_trunk.get_float());
+        AMPI_YIELD(cartcomm);
+    }
 
     CUDA_CHECK(cudaPeekAtLastError());
 }
