@@ -374,6 +374,5 @@ void ComputeDPD::remote_interactions(const Particle * const p, const int n, Acce
     BipsBatch::interactions(start, batchinfos, aij, gammadpd, sigma, 1. / sqrt(dt), infos, stream, uploadstream, (float *)a, n, hstart_padded);
 
     AMPI_YIELD(cartcomm);
-    CUDA_CHECK(cudaStreamSynchronize(uploadstream));
     CUDA_CHECK(cudaPeekAtLastError());
 }
