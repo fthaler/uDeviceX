@@ -593,11 +593,11 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
 		
 	*failuretest.maxstripe = 0;
 	
-	if (shmem_fp <= 32 * 1024) {
+	/*if (shmem_fp <= 32 * 1024) {
             //fprintf(stderr, "yzhistogram<%d, %d, %d><<<%d, %d, %zu>>>\n", ILP, SLOTS, WARPS, nblocks, blocksize, sizeof(int) * ncells.y * ncells.z * SLOTS);
 	    yzhistogram<ILP, SLOTS, WARPS><<<nblocks, blocksize, sizeof(int) * ncells.y * ncells.z * SLOTS, stream>>>
                 (np, 1 / rc, ncells, domainstart, yzcid,  loffsets, yzhisto, dyzscan, failuretest.dmaxstripe, gmemhistos);
-	} else
+	} else*/
 	{
 	    static const int SLOTS = 1;
 	    
