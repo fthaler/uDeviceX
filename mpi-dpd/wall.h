@@ -57,6 +57,6 @@ public:
 		      const int * const cellsstart, const int * const cellscount, cudaStream_t stream);
 
     bool is_active() const { return active; }
-    void create_sdf_texture();
-    void destroy_sdf_texture();
+    void allocate_tmp();
+    void free_tmp();
 };

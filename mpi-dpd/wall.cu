@@ -943,7 +943,7 @@ void ComputeWall::init(Particle* const p, const int n, int& nsurvived,
 
     //SolidWallsKernel::setup();
 
-    create_sdf_texture();
+    allocate_tmp();
 
     //CUDA_CHECK(cudaBindTextureToArray(SolidWallsKernel::texSDF, arrSDF, fmt));
 
@@ -1204,7 +1204,7 @@ void ComputeWall::interactions(const Particle * const p, const int n, Accelerati
 
 ComputeWall::~ComputeWall()
 {
-    destroy_sdf_texture();
+    free_tmp();
     //CUDA_CHECK(cudaUnbindTexture(SolidWallsKernel::texSDF));
     if (active) {
         free_migratable_array(arrSDF);
@@ -1212,7 +1212,7 @@ ComputeWall::~ComputeWall()
     }
 }
 
-void ComputeWall::create_sdf_texture()
+void ComputeWall::allocate_tmp()
 {
     assert(texSDF == 0);
 
@@ -1233,10 +1233,11 @@ void ComputeWall::create_sdf_texture()
                                        &resDesc, &texDesc, NULL));
 }
 
-void ComputeWall::destroy_sdf_texture()
+void ComputeWall::free_tmp()
 {
     if (texSDF != 0) {
         CUDA_CHECK(cudaDestroyTextureObject(texSDF));
         texSDF = 0;
     }
+    cells.free_tmp();
 }

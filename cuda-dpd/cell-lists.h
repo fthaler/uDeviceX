@@ -18,7 +18,15 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
 		  const int xcells, const int ycells, const int zcells,
 		  const float xdomainstart, const float ydomainstart, const float zdomainstart,
 		  int * const host_order, int * device_cellsstart, int * device_cellscount,
-		  std::pair<int, int *> * nonemptycells = NULL, cudaStream_t stream = 0, const float * const src_device_xyzuvw = NULL);
+		  std::pair<int, int *> * nonemptycells, cudaStream_t stream, const float * const src_device_xyzuvw,
+          cudaTextureObject_t& texParticlesCLS,
+          cudaTextureObject_t& texScanYZ,
+          cudaTextureObject_t& texCountYZ,
+          float*& xyzuvw_internal_copy,
+          int*& loffsets, int*& yzcid, int*& outid, int*& dyzscan, int*& yzhisto, int*& gmemhistos, int*& blockscount,
+          cudaEvent_t& evstart, cudaEvent_t& evacquire, cudaEvent_t& evscatter, cudaEvent_t& evgather,
+          bool& initialized,
+          int& old_np, int& old_yzncells, int& old_gmemhistos_size);
 		  
 void build_clists_vanilla(float * const device_xyzuvw, int np, const float rc, 
 			  const int xcells, const int ycells, const int zcells,

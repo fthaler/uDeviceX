@@ -21,6 +21,33 @@
 bool NvtxTracer::currently_profiling = false;
 #endif
 
+void CellListsBase::free_tmp()
+{
+    if (tmp.texParticlesCLS)
+        CUDA_CHECK(cudaDestroyTextureObject(tmp.texParticlesCLS));
+    if (tmp.texScanYZ)
+        CUDA_CHECK(cudaDestroyTextureObject(tmp.texScanYZ));
+    if (tmp.texCountYZ)
+        CUDA_CHECK(cudaDestroyTextureObject(tmp.texCountYZ));
+    CUDA_CHECK(cudaFree(tmp.xyzuvw_internal_copy));
+    CUDA_CHECK(cudaFree(tmp.loffsets));
+    CUDA_CHECK(cudaFree(tmp.yzcid));
+    CUDA_CHECK(cudaFree(tmp.outid));
+    CUDA_CHECK(cudaFree(tmp.dyzscan));
+    CUDA_CHECK(cudaFree(tmp.yzhisto));
+    CUDA_CHECK(cudaFree(tmp.gmemhistos));
+    CUDA_CHECK(cudaFree(tmp.blockscount));
+    if (tmp.evstart)
+        CUDA_CHECK(cudaEventDestroy(tmp.evstart));
+    if (tmp.evacquire)
+        CUDA_CHECK(cudaEventDestroy(tmp.evacquire));
+    if (tmp.evscatter)
+        CUDA_CHECK(cudaEventDestroy(tmp.evscatter));
+    if (tmp.evgather)
+        CUDA_CHECK(cudaEventDestroy(tmp.evgather));
+    memset(&tmp, 0, sizeof(tmp));
+}
+
 void CellListsBase::build(Particle * const p, const int n, cudaStream_t stream, int * const order, const Particle * const src)
 {
     NVTX_RANGE("Cells-build", NVTX_C1)
@@ -30,15 +57,19 @@ void CellListsBase::build(Particle * const p, const int n, cudaStream_t stream, 
 	    const bool vanilla_cases =
 		globals->is_mps_enabled && !(XSIZE_SUBDOMAIN < 64 && YSIZE_SUBDOMAIN < 64 && ZSIZE_SUBDOMAIN < 64) ||
 		globals->localcomm.get_size() == 8 && XSIZE_SUBDOMAIN >= 96 && YSIZE_SUBDOMAIN >= 96 && ZSIZE_SUBDOMAIN >= 96;
-
 #ifdef AMPI
-        // TODO: make cell lists AMPI-safe
-        stream = 0;
+        assert(!vanilla_cases);
 #endif
 	    if (vanilla_cases)
 		build_clists_vanilla((float * )p, n, 1, LX, LY, LZ, -LX/2, -LY/2, -LZ/2, order, start, count,  NULL, stream, (float *)src);
 	    else
-		build_clists((float * )p, n, 1, LX, LY, LZ, -LX/2, -LY/2, -LZ/2, order, start, count,  NULL, stream, (float *)src);
+		build_clists((float * )p, n, 1, LX, LY, LZ, -LX/2, -LY/2, -LZ/2, order, start, count,  NULL, stream, (float *)src,
+                     tmp.texParticlesCLS, tmp.texScanYZ, tmp.texCountYZ,
+                     tmp.xyzuvw_internal_copy,
+                     tmp.loffsets, tmp.yzcid, tmp.outid, tmp.dyzscan, tmp.yzhisto, tmp.gmemhistos, tmp.blockscount,
+                     tmp.evstart, tmp.evacquire, tmp.evscatter, tmp.evgather,
+                     tmp.initialized,
+                     tmp.old_np, tmp.old_yzncells, tmp.old_gmemhistos_size);
         CUDA_CHECK(cudaPeekAtLastError());
 	}
 	else

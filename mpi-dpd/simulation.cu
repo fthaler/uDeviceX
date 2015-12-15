@@ -225,9 +225,16 @@ void Simulation::_report(const bool verbose, const int idtimestep)
         float pe_busy_time_sum, pe_busy_time_max;
         MPI_CHECK(MPI_Reduce(&pe_busy_time_s, &pe_busy_time_sum, 1, MPI_FLOAT, MPI_SUM, 0, activecomm));
         MPI_CHECK(MPI_Reduce(&pe_busy_time_s, &pe_busy_time_max, 1, MPI_FLOAT, MPI_MAX, 0, activecomm));
-        const double pe_imbalance = 100 * (pe_busy_time_max / pe_busy_time_sum * MPI_Num_pes() - 1);
+        const double pe_busy_time_imbalance = 100 * (pe_busy_time_max / pe_busy_time_sum * MPI_Num_pes() - 1);
+
+        float pe_load_time_s = vpid == 0 ? pe_load_time : 0.0f;
+        float pe_load_time_sum, pe_load_time_max;
+        MPI_CHECK(MPI_Reduce(&pe_load_time_s, &pe_load_time_sum, 1, MPI_FLOAT, MPI_SUM, 0, activecomm));
+        MPI_CHECK(MPI_Reduce(&pe_load_time_s, &pe_load_time_max, 1, MPI_FLOAT, MPI_MAX, 0, activecomm));
+        const double pe_load_time_imbalance = 100 * (pe_load_time_max / pe_load_time_sum * MPI_Num_pes() - 1);
+
         if (verbose)
-            printf("\x1b[95moverall PE imbalance: %.f%%\n", pe_imbalance);
+            printf("\x1b[95moverall PE busy time/load imbalance: %.f%%/%.f%%\n", pe_busy_time_imbalance, pe_load_time_imbalance);
     }
 #endif
 
@@ -1048,6 +1055,7 @@ void Simulation::_pre_migrate()
 {
     CUDA_CHECK(cudaDeviceSynchronize());
     redistribute.pre_migrate();
+    cells.free_tmp();
 
     if (dpd)
         delete dpd;
@@ -1063,7 +1071,7 @@ void Simulation::_pre_migrate()
     contact = NULL;
 
     if (wall.is_active())
-        wall.destroy_sdf_texture();
+        wall.free_tmp();
 
     CUDA_CHECK(cudaStreamDestroy(mainstream));
     CUDA_CHECK(cudaStreamDestroy(uploadstream));
@@ -1087,7 +1095,7 @@ void Simulation::_post_migrate()
 
     redistribute.post_migrate();
     if (wall.is_active())
-        wall.create_sdf_texture();
+        wall.allocate_tmp();
 }
 
 void Simulation::_migrate()

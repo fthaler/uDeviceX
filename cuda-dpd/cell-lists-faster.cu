@@ -16,12 +16,13 @@
 
 //#define TEST_MAURO
 
-texture<float, cudaTextureType1D> texParticlesCLS;
+//texture<float, cudaTextureType1D> texParticlesCLS;
 
-__device__ int  blockscount = 0;
+//__device__ int  blockscount = 0;
  
 template<int ILP, int SLOTS, int WARPS>
-__global__ void yzhistogram(const int np,
+__global__ void yzhistogram(cudaTextureObject_t texParticlesCLS, int* blockscount,
+                const int np,
 			    const float invrc, const int3 ncells, 
 			    const float3 domainstart,
 			    int * const yzcid,
@@ -62,10 +63,10 @@ __global__ void yzhistogram(const int np,
 	if (g < np)
 	{
 #ifdef TEST_MAURO
-	    x[j] = tex1Dfetch(texParticlesCLS, 0 + 6 * g); 
+	    x[j] = tex1Dfetch<float>(texParticlesCLS, 0 + 6 * g); 
 #endif
-	    y[j] = tex1Dfetch(texParticlesCLS, 1 + 6 * g); 
-	    z[j] = tex1Dfetch(texParticlesCLS, 2 + 6 * g); 
+	    y[j] = tex1Dfetch<float>(texParticlesCLS, 1 + 6 * g); 
+	    z[j] = tex1Dfetch<float>(texParticlesCLS, 2 + 6 * g); 
 	}
     }
 
@@ -147,10 +148,10 @@ __global__ void yzhistogram(const int np,
 
     if (tid == 0)
     {
-	lastone = gridDim.x - 1 == atomicAdd(&blockscount, 1);
+	lastone = gridDim.x - 1 == atomicAdd(blockscount, 1);
 	
 	if (lastone)
-	    blockscount = 0;
+	    *blockscount = 0;
     }
 
     __syncthreads();
@@ -234,10 +235,10 @@ __global__ void yzhistogram(const int np,
     }
 }
 
-texture<int, cudaTextureType1D> texScanYZ;
+//texture<int, cudaTextureType1D> texScanYZ;
 
 template<int ILP>
-__global__ void yzscatter(const int * const localoffsets,
+__global__ void yzscatter(cudaTextureObject_t texScanYZ, const int * const localoffsets,
 			  const int * const yzcids,
 			  const int np,
 			  int * const outid)
@@ -250,7 +251,7 @@ __global__ void yzscatter(const int * const localoffsets,
 	{
 	    const int yzcid = yzcids[g];
 	    const int localoffset = localoffsets[g];
-	    const int base = tex1Dfetch(texScanYZ, yzcid);
+	    const int base = tex1Dfetch<int>(texScanYZ, yzcid);
 	
 #ifndef TEST_MAURO
 	    const int entry = base + localoffset;
@@ -263,10 +264,10 @@ __global__ void yzscatter(const int * const localoffsets,
     }
 }
 
-texture<int, cudaTextureType1D> texCountYZ;
+//texture<int, cudaTextureType1D> texCountYZ;
 
 template<int YCPB>
-__global__ void xgather(const int * const ids, const int np, const float invrc, const int3 ncells, const float3 domainstart,
+__global__ void xgather(cudaTextureObject_t texParticlesCLS, cudaTextureObject_t texScanYZ, cudaTextureObject_t texCountYZ, const int * const ids, const int np, const float invrc, const int3 ncells, const float3 domainstart,
 			int * const starts, int * const counts,
 			float * const xyzuvw, const int bufsize, int * const order, int *loffs)
 {
@@ -289,8 +290,8 @@ __global__ void xgather(const int * const ids, const int np, const float invrc, 
 	return;
     
     const int yzcid = ycid + ncells.y * blockIdx.z;
-    const int start = tex1Dfetch(texScanYZ, yzcid);
-    const int count = tex1Dfetch(texCountYZ, yzcid);
+    const int start = tex1Dfetch<int>(texScanYZ, yzcid);
+    const int count = tex1Dfetch<int>(texCountYZ, yzcid);
 #ifdef TEST_MAURO
     loffs += start;
 #endif
@@ -308,7 +309,7 @@ __global__ void xgather(const int * const ids, const int np, const float invrc, 
 	const int g = start + i;
 #ifndef TEST_MAURO
  	const int id = ids[g];
-	const float x = tex1Dfetch(texParticlesCLS, 6 * id);
+	const float x = tex1Dfetch<float>(texParticlesCLS, 6 * id);
 	const int xcid = min(ncells.x - 1, max(0, (int)floor(invrc * (x - domainstart.x))));
 #else
  	int id = ids[g];
@@ -385,7 +386,7 @@ __global__ void xgather(const int * const ids, const int np, const float invrc, 
 	const int p = reordered[i / 6];
 	assert(i / 6 < bufsize);
 	
-	xyzuvw[base + i] = tex1Dfetch(texParticlesCLS, c + 6 * p);
+	xyzuvw[base + i] = tex1Dfetch<float>(texParticlesCLS, c + 6 * p);
     }
 
     if (order != NULL)
@@ -419,7 +420,10 @@ struct FailureTest
 	    }
 	    else
 	    { 
-		cudaSetDeviceFlags(cudaDeviceMapHost);
+		if (cudaSetDeviceFlags(cudaDeviceMapHost) == cudaErrorSetOnActiveProcess) {
+            if (cudaGetLastError() != cudaErrorSetOnActiveProcess)
+                abort();
+        }
 		cudaError_t status = cudaGetLastError ( );
 		cudaError_t status2 = cudaPeekAtLastError();
 
@@ -451,7 +455,7 @@ struct FailureTest
 	    
 	    *maxstripe = 0; 
 	}
-} static failuretest;
+};// static failuretest;
 
 struct is_gzero
 {
@@ -465,19 +469,27 @@ struct is_gzero
 bool clists_perfmon = false;
 bool clists_robust = true;
 
-float * xyzuvw_internal_copy = NULL;
+/*float * xyzuvw_internal_copy = NULL;
 int *loffsets = NULL, *yzcid = NULL, *outid = NULL, *dyzscan = NULL, *yzhisto = NULL, *gmemhistos = NULL;
 
 cudaEvent_t evstart, evacquire, evscatter, evgather;
 
 bool initialized = false;
-int old_np = 0, old_yzncells = 0, old_gmemhistos_size = 0;
+int old_np = 0, old_yzncells = 0, old_gmemhistos_size = 0;*/
 
 void build_clists(float * const device_xyzuvw, int np, const float rc, 
 		  const int xcells, const int ycells, const int zcells,
 		  const float xdomainstart, const float ydomainstart, const float zdomainstart,
 		  int * const order, int * device_cellsstart, int * device_cellscount,
-		  std::pair<int, int *> * nonemptycells, cudaStream_t stream, const float * const src_device_xyzuvw)
+		  std::pair<int, int *> * nonemptycells, cudaStream_t stream, const float * const src_device_xyzuvw,
+          cudaTextureObject_t& texParticlesCLS,
+          cudaTextureObject_t& texScanYZ,
+          cudaTextureObject_t& texCountYZ,
+          float*& xyzuvw_internal_copy,
+          int*& loffsets, int*& yzcid, int*& outid, int*& dyzscan, int*& yzhisto, int*& gmemhistos, int*& blockscount,
+          cudaEvent_t& evstart, cudaEvent_t& evacquire, cudaEvent_t& evscatter, cudaEvent_t& evgather,
+          bool& initialized,
+          int& old_np, int& old_yzncells, int& old_gmemhistos_size)
 {
     assert(np > 0);
     
@@ -486,7 +498,7 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
     const int yzncells = ycells * zcells;
     const float densitynumber = np / (float)(ncells.x * ncells.y * ncells.z);
     int xbufsize = (int)(ncells.x * densitynumber * 2);
-
+    FailureTest failuretest;
  
      
     if (!initialized)
@@ -496,21 +508,23 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
 	CUDA_CHECK(cudaEventCreate(&evscatter));
 	CUDA_CHECK(cudaEventCreate(&evgather));
 	    
-	texScanYZ.channelDesc = cudaCreateChannelDesc<int>();
+	/*texScanYZ.channelDesc = cudaCreateChannelDesc<int>();
 	texScanYZ.filterMode = cudaFilterModePoint;
 	texScanYZ.mipmapFilterMode = cudaFilterModePoint;
-	texScanYZ.normalized = 0;
+	texScanYZ.normalized = 0;*/
     
-	texCountYZ.channelDesc = cudaCreateChannelDesc<int>();
+	/*texCountYZ.channelDesc = cudaCreateChannelDesc<int>();
 	texCountYZ.filterMode = cudaFilterModePoint;
 	texCountYZ.mipmapFilterMode = cudaFilterModePoint;
-	texCountYZ.normalized = 0;
+	texCountYZ.normalized = 0;*/
 
-	texParticlesCLS.channelDesc = cudaCreateChannelDesc<float>();
+	/*texParticlesCLS.channelDesc = cudaCreateChannelDesc<float>();
 	texParticlesCLS.filterMode = cudaFilterModePoint;
 	texParticlesCLS.mipmapFilterMode = cudaFilterModePoint;
-	texParticlesCLS.normalized = 0;
+	texParticlesCLS.normalized = 0;*/
 	
+    CUDA_CHECK(cudaMalloc(&blockscount, sizeof(int)));
+    CUDA_CHECK(cudaMemset(blockscount, 0, sizeof(int)));
 	initialized = true;
     }
 
@@ -558,10 +572,65 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
  
     CUDA_CHECK(cudaMemsetAsync(yzhisto, 0, sizeof(int) * yzncells, stream));
   
-    size_t textureoffset = 0;
-    CUDA_CHECK(cudaBindTexture(&textureoffset, &texParticlesCLS, xyzuvw_copy, &texParticlesCLS.channelDesc, sizeof(float) * 6 * np));
-    CUDA_CHECK(cudaBindTexture(&textureoffset, &texScanYZ, dyzscan, &texScanYZ.channelDesc, sizeof(int) * ncells.y * ncells.z));
-    CUDA_CHECK(cudaBindTexture(&textureoffset, &texCountYZ, yzhisto, &texCountYZ.channelDesc, sizeof(int) * ncells.y * ncells.z));
+    if (texParticlesCLS)
+        CUDA_CHECK(cudaDestroyTextureObject(texParticlesCLS));
+    {
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) xyzuvw_copy;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<float>();
+        resDesc.res.linear.sizeInBytes = sizeof(float) * 6 * np;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+         
+        CUDA_CHECK(cudaCreateTextureObject(&texParticlesCLS,
+                                           &resDesc, &texDesc, NULL));
+    }
+
+    /*size_t textureoffset = 0;
+    CUDA_CHECK(cudaBindTexture(&textureoffset, &texParticlesCLS, xyzuvw_copy, &texParticlesCLS.channelDesc, sizeof(float) * 6 * np));*/
+    if (texScanYZ)
+        CUDA_CHECK(cudaDestroyTextureObject(texScanYZ));
+    {
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) dyzscan;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<int>();
+        resDesc.res.linear.sizeInBytes = sizeof(int) * yzncells;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+         
+        CUDA_CHECK(cudaCreateTextureObject(&texScanYZ,
+                                           &resDesc, &texDesc, NULL));
+    }
+    /*CUDA_CHECK(cudaBindTexture(&textureoffset, &texScanYZ, dyzscan, &texScanYZ.channelDesc, sizeof(int) * ncells.y * ncells.z));*/
+    if (texCountYZ)
+        CUDA_CHECK(cudaDestroyTextureObject(texCountYZ));
+    {
+        cudaResourceDesc resDesc;
+        memset(&resDesc, 0, sizeof(resDesc));
+        resDesc.resType = cudaResourceTypeLinear;
+        resDesc.res.linear.devPtr = (void*) yzhisto;
+        resDesc.res.linear.desc = cudaCreateChannelDesc<int>();
+        resDesc.res.linear.sizeInBytes = sizeof(int) * ncells.y * ncells.z;
+        cudaTextureDesc texDesc;
+        memset(&texDesc, 0, sizeof(texDesc));
+        texDesc.filterMode = cudaFilterModePoint;
+        texDesc.mipmapFilterMode = cudaFilterModePoint;
+        texDesc.normalizedCoords = 0;
+         
+        CUDA_CHECK(cudaCreateTextureObject(&texCountYZ,
+                                           &resDesc, &texDesc, NULL));
+    }
+    /*CUDA_CHECK(cudaBindTexture(&textureoffset, &texCountYZ, yzhisto, &texCountYZ.channelDesc, sizeof(int) * ncells.y * ncells.z));*/
   
     if (clists_perfmon)
 	CUDA_CHECK(cudaEventRecord(evstart));
@@ -593,18 +662,18 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
 		
 	*failuretest.maxstripe = 0;
 	
-	/*if (shmem_fp <= 32 * 1024) {
+	if (shmem_fp <= 32 * 1024) {
             //fprintf(stderr, "yzhistogram<%d, %d, %d><<<%d, %d, %zu>>>\n", ILP, SLOTS, WARPS, nblocks, blocksize, sizeof(int) * ncells.y * ncells.z * SLOTS);
 	    yzhistogram<ILP, SLOTS, WARPS><<<nblocks, blocksize, sizeof(int) * ncells.y * ncells.z * SLOTS, stream>>>
-                (np, 1 / rc, ncells, domainstart, yzcid,  loffsets, yzhisto, dyzscan, failuretest.dmaxstripe, gmemhistos);
-	} else*/
+                (texParticlesCLS, blockscount, np, 1 / rc, ncells, domainstart, yzcid,  loffsets, yzhisto, dyzscan, failuretest.dmaxstripe, gmemhistos);
+	} else
 	{
 	    static const int SLOTS = 1;
 	    
 	    //printf("SHMEM: %.2f kB\n", (float)(sizeof(int) * ncells.y * ncells.z * SLOTS) / 1024.);
 	    
 	    yzhistogram<ILP, SLOTS, WARPS><<<nblocks, blocksize, sizeof(int) * ncells.y * ncells.z * SLOTS, stream>>>
-                (np, 1 / rc, ncells, domainstart, yzcid,  loffsets, yzhisto, dyzscan, failuretest.dmaxstripe, gmemhistos);
+                (texParticlesCLS, blockscount, np, 1 / rc, ncells, domainstart, yzcid,  loffsets, yzhisto, dyzscan, failuretest.dmaxstripe, gmemhistos);
 	}
 
 	CUDA_CHECK(cudaPeekAtLastError());
@@ -614,7 +683,7 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
     
     {
 	static const int ILP = 4;
-	yzscatter<ILP><<<(np + 256 * ILP - 1) / (256 * ILP), 256, 0, stream>>>(loffsets, yzcid, np, outid);
+	yzscatter<ILP><<<(np + 256 * ILP - 1) / (256 * ILP), 256, 0, stream>>>(texScanYZ, loffsets, yzcid, np, outid);
     }
     
     CUDA_CHECK(cudaEventSynchronize(evacquire));
@@ -631,7 +700,7 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
 	if(shmem_fp < 48 * 1024) {
             //printf("line %d: xgather<%d><<<(%d,%d,%d), (%d,%d), %d>>>\n", __LINE__, YCPB, 1, ncells.y / YCPB, ncells.z, 32, YCPB, shmem_fp);
 	    xgather<YCPB><<< dim3(1, (ncells.y +YCPB-1)/ YCPB, ncells.z), dim3(32, YCPB), shmem_fp, stream>>>
-		(outid, np, 1 / rc, ncells, domainstart, device_cellsstart, device_cellscount, device_xyzuvw, xbufsize,
+		(texParticlesCLS, texScanYZ, texCountYZ, outid, np, 1 / rc, ncells, domainstart, device_cellsstart, device_cellscount, device_xyzuvw, xbufsize,
 		 order, loffsets);
 	} else
 	{
@@ -642,7 +711,7 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
 	    assert(shmem_fp < 48 * 1024);
 	    
 	    xgather<YCPB><<< dim3(1, ncells.y / YCPB, ncells.z), dim3(32, YCPB), shmem_fp, stream>>>
-		(outid, np, 1 / rc, ncells, domainstart, device_cellsstart, device_cellscount, device_xyzuvw, xbufsize,
+		(texParticlesCLS, texScanYZ, texCountYZ, outid, np, 1 / rc, ncells, domainstart, device_cellsstart, device_cellscount, device_xyzuvw, xbufsize,
 		 order, loffsets);
 	}
     }
@@ -671,7 +740,7 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
 	    const int xbufsize = *failuretest.maxstripe;
 	    
 	    xgather<1><<< dim3(1, ncells.y, ncells.z), dim3(32), sizeof(int) * (ncells.x  + 2 * xbufsize), stream>>>
-		(outid, np, 1 / rc, ncells, domainstart, device_cellsstart, device_cellscount, device_xyzuvw, xbufsize,
+		(texParticlesCLS, texScanYZ, texCountYZ, outid, np, 1 / rc, ncells, domainstart, device_cellsstart, device_cellscount, device_xyzuvw, xbufsize,
 		 order, loffsets);
 
 	    cudaError_t status = cudaPeekAtLastError();
@@ -722,7 +791,7 @@ void build_clists(float * const device_xyzuvw, int np, const float rc,
 	nonemptycells->first = nonempties;
     }
 
-    CUDA_CHECK(cudaUnbindTexture(texParticlesCLS));
+    /*CUDA_CHECK(cudaUnbindTexture(texParticlesCLS));
     CUDA_CHECK(cudaUnbindTexture(texScanYZ));
-    CUDA_CHECK(cudaUnbindTexture(texCountYZ));
+    CUDA_CHECK(cudaUnbindTexture(texCountYZ));*/
 }

@@ -391,9 +391,26 @@ struct CellListsBase
 
     void build(Particle * const p, const int n, cudaStream_t stream,
                int * const order = NULL, const Particle * const src = NULL);
+    void free_tmp();
+
+    virtual ~CellListsBase() { free_tmp(); }
 protected:
+    struct TemporaryData {
+        cudaTextureObject_t texParticlesCLS, texScanYZ, texCountYZ;
+        float* xyzuvw_internal_copy;
+        int* loffsets, *yzcid, *outid, *dyzscan, *yzhisto, *gmemhistos, *blockscount;
+        cudaEvent_t evstart, evacquire, evscatter, evgather;
+        bool initialized;
+        int old_np, old_yzncells, old_gmemhistos_size;
+    };
+
+    TemporaryData tmp;
+
     CellListsBase(Globals* globals, const int LX, const int LY, const int LZ)
-        : globals(globals), ncells(LX * LY * LZ + 1), LX(LX), LY(LY), LZ(LZ) {}
+        : globals(globals), ncells(LX * LY * LZ + 1), LX(LX), LY(LY), LZ(LZ) {
+        memset(&tmp, 0, sizeof(tmp));    
+    }
+
 };
 
 struct CellLists : CellListsBase
